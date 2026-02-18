@@ -30,11 +30,11 @@ func (h *Handle) SendConfig() error {
 		AudioChannelCount: 1,
 	})
 
-	var eouClassifier stt.EouClassifierOptions
-	eouClassifier.SetDefaultClassifier(&stt.DefaultEouClassifier{
-		Type:                       stt.DefaultEouClassifier_HIGH,
-		MaxPauseBetweenWordsHintMs: 500,
-	})
+	//var eouClassifier stt.EouClassifierOptions
+	//eouClassifier.SetDefaultClassifier(&stt.DefaultEouClassifier{
+	//	Type:                       stt.DefaultEouClassifier_HIGH,
+	//	MaxPauseBetweenWordsHintMs: 500,
+	//})
 
 	var req stt.StreamingRequest
 	req.SetSessionOptions(&stt.StreamingOptions{
@@ -46,7 +46,7 @@ func (h *Handle) SendConfig() error {
 				LanguageCode:    []string{"ru-RU"},
 			},
 		},
-		EouClassifier: &eouClassifier,
+		//EouClassifier: &eouClassifier,
 	})
 
 	return h.client.Send(&req)

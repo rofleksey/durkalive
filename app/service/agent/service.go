@@ -153,7 +153,7 @@ func (s *Service) shouldRespond(username, text string, isChat bool) bool {
 func (s *Service) buildPrompt(username, text string) string {
 	return fmt.Sprintf(`[Сообщение от %s]: %s
 
-Если тебе нужно запомнить что-то об этом пользователе или разговоре, используй инструменты для работы с памятью.`, username, text)
+Если тебе нужно запомнить что-то об этом пользователе или разговоре, используй memory tool.`, username, text)
 }
 
 func (s *Service) Close() error {
