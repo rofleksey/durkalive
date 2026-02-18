@@ -1,0 +1,27 @@
+# Generated YAML configuration example
+log:
+  # Telegram logging config
+  telegram:
+    # Chat bot token, obtain it via BotFather
+    token: "1234567890:ABCdefGHIjklMNopQRstUVwxyZ-123456789"
+
+    # Chat ID to send messages to
+    chat_id: 1001234567890
+
+db:
+  # Postgres username
+  user: postgres
+
+  # Postgres password
+  pass: example_pass
+
+  # Postgres host
+  host: "localhost:5432"
+
+  # Postgres database name
+  database: durkalive
+
+yandex:
+  speech_kit:
+    api_key: rgrwegrewgrewgregw
+    folder_id: rgrwegrewgrewgregw

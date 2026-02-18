@@ -1,0 +1,14 @@
+.idea/
+data/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+durkalive
+**/node_modules
+scripts
+config.yaml
+service-account-key.json

@@ -1,0 +1,134 @@
+version: "2"
+run:
+  tests: false
+linters:
+  default: none
+  enable:
+    - asasalint
+    - asciicheck
+    - bidichk
+    - bodyclose
+    - canonicalheader
+    - copyloopvar
+    - decorder
+    - dogsled
+    - dupword
+    - durationcheck
+    - errchkjson
+    - errname
+    - errorlint
+    - exhaustive
+    - exhaustruct
+    - exptostd
+    - fatcontext
+    - forbidigo
+    - forcetypeassert
+    - ginkgolinter
+    - gocheckcompilerdirectives
+    - gochecksumtype
+    - goconst
+    - gocritic
+    - goheader
+    - gomoddirectives
+    - gomodguard
+    - goprintffuncname
+    - gosec
+    - gosmopolitan
+    - grouper
+    - iface
+    - importas
+    - interfacebloat
+    - intrange
+    - loggercheck
+    - makezero
+    - mirror
+    - misspell
+    - musttag
+    - nakedret
+    - nilerr
+    - nilnesserr
+    - nilnil
+    - noctx
+    - nosprintfhostport
+    - paralleltest
+    - prealloc
+    - predeclared
+    - promlinter
+    - protogetter
+    - reassign
+    - recvcheck
+    - revive
+    - rowserrcheck
+    - sloglint
+    - spancheck
+    - sqlclosecheck
+    - staticcheck
+    - tagliatelle
+    - testableexamples
+    - testifylint
+    - testpackage
+    - thelper
+    - tparallel
+    - unconvert
+    - unparam
+    - usestdlibvars
+    - usetesting
+    - zerologlint
+  settings:
+    tagliatelle:
+      case:
+        rules:
+          yaml: snake
+    exhaustive:
+      default-signifies-exhaustive: true
+    exhaustruct:
+      allow-empty-returns: true
+      exclude:
+        - .*500JSONResponse
+        - .*404JSONResponse
+        - .*403JSONResponse
+        - .*401JSONResponse
+        - .*400JSONResponse
+        - .*http.Client.*
+        - .*fiber.*
+        - .*mapstructure.*
+        - .*jwtware.+
+        - .*logger.Config*
+        - .*recover.Config.*
+        - .*openapi3filter.Options.*
+        - .+fibermiddleware.Options.*
+        - .*slog-telegram.*
+        - .*console-slog.*
+        - .*sentry.*
+        - .*cobra.*
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - staticcheck
+        text: 'ST1005:'
+      - linters:
+          - staticcheck
+        text: 'ST1003:'
+      - linters:
+          - gocritic
+        text: 'commentFormatting:'
+      - linters:
+          - revive
+        text: 'var-naming:'
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
