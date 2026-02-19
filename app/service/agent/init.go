@@ -7,9 +7,6 @@ import (
 
 	"github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/tmc/langchaingo/agents"
-	"github.com/tmc/langchaingo/llms"
-	"github.com/tmc/langchaingo/memory"
 	"github.com/tmc/langchaingo/tools"
 )
 
@@ -77,52 +74,6 @@ func (s *Service) initializeMCPClients() error {
 			name:   server.name,
 		})
 	}
-
-	return nil
-}
-
-func (s *Service) initializeAgent() error {
-	var allTools []tools.Tool
-	for _, wrapper := range s.mcpClients {
-		allTools = append(allTools, wrapper.tools...)
-	}
-
-	systemPrompt := `Привет! Ты — полезный помощник для чата Twitch, созданный для стримера Dead by Daylight.
-
-ВАЖНЫЕ ПРАВИЛА:
-* Постарайся отвечать на русском языке
-* Будь дружелюбным и вовлекай сообщество в общение.
-* Ты можешь использовать memory tool, чтобы запоминать информацию о зрителях и детали разговоров.
-* Старайся отвечать кратко и уместно для чата Twitch.
-* Если ты в чём-то не уверен или какой-то tool не сработал — не отвечай вообще.
-* Отвечай, только если тебя упомянули, задали прямой вопрос или если сообщение содержит важные ключевые слова.
-* Не реагируй на каждое сообщение — будь ОЧЕНЬ избирательным.
-* Сообщения от streamer - это результат работы Speech To Text, они могут быть не точными.
-* Учитывай контекст недавних сообщений в чате.
-* NEVER EXPLAIN WHY YOU NEED TO USE A TOOL
-`
-
-	if err := s.memory.AddMessage(context.Background(), llms.SystemChatMessage{
-		Content: systemPrompt,
-	}); err != nil {
-		return fmt.Errorf("failed to add system chat message: %w", err)
-	}
-
-	agent := agents.NewConversationalAgent(
-		s.llm,
-		allTools,
-	)
-
-	executor := agents.NewExecutor(
-		agent,
-		agents.WithMemory(memory.NewConversationWindowBuffer(5,
-			memory.WithChatHistory(s.memory),
-		)),
-		agents.WithMaxIterations(3),
-		agents.WithCallbacksHandler(&LogCallbackHandler{}),
-	)
-
-	s.executor = executor
 
 	return nil
 }

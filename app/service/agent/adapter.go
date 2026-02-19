@@ -21,44 +21,27 @@ func (m *mcpToolAdapter) Name() string {
 }
 
 func (m *mcpToolAdapter) Description() string {
-	return m.tool.Description
+	inputSchemaBytes, _ := m.tool.InputSchema.MarshalJSON()
+	outputSchemaBytes, _ := m.tool.OutputSchema.MarshalJSON()
+	return fmt.Sprintf("%s - JSON INPUT SCHEMA: %s - JSON OUTPUT SCHEMA: %s", m.tool.Description, string(inputSchemaBytes), string(outputSchemaBytes))
 }
 
 func (m *mcpToolAdapter) Call(ctx context.Context, input string) (string, error) {
+	input = strings.TrimSpace(input)
+
+	var jsonData any
+	if err := json.Unmarshal([]byte(input), &jsonData); err != nil {
+		jsonData = input
+	}
+
 	callRequest := mcp.CallToolRequest{
+		Params: mcp.CallToolParams{
+			Name:      m.tool.Name,
+			Arguments: jsonData,
+		},
 		Request: mcp.Request{
 			Method: "tools/call",
 		},
-	}
-
-	callRequest.Params.Name = m.tool.Name
-
-	// Parse the input as JSON if it looks like JSON
-	var args map[string]interface{}
-	if strings.TrimSpace(input)[0] == '{' {
-		if err := json.Unmarshal([]byte(input), &args); err == nil {
-			callRequest.Params.Arguments = args
-		} else {
-			// If JSON parsing fails, wrap the input
-			callRequest.Params.Arguments = map[string]interface{}{
-				"input": input,
-			}
-		}
-	} else {
-		// For non-JSON input, try to determine the expected argument
-		if len(m.tool.InputSchema.Properties) > 0 {
-			// Use the first property name from the schema
-			for propName := range m.tool.InputSchema.Properties {
-				callRequest.Params.Arguments = map[string]interface{}{
-					propName: input,
-				}
-				break
-			}
-		} else {
-			callRequest.Params.Arguments = map[string]interface{}{
-				"input": input,
-			}
-		}
 	}
 
 	response, err := m.client.CallTool(ctx, callRequest)
