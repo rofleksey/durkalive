@@ -1,0 +1,55 @@
+package agent
+
+import (
+	"fmt"
+	"strings"
+	"sync"
+	"time"
+)
+
+const messageHistorySize = 10
+
+type chatMessage struct {
+	Username  string
+	Text      string
+	Timestamp time.Time
+}
+
+type ChatHistory struct {
+	mu       sync.RWMutex
+	messages []chatMessage
+}
+
+func (h *ChatHistory) add(username, text string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	msg := chatMessage{
+		Username:  username,
+		Text:      text,
+		Timestamp: time.Now(),
+	}
+
+	if len(h.messages) >= messageHistorySize {
+		h.messages = append(h.messages[1:], msg)
+	} else {
+		h.messages = append(h.messages, msg)
+	}
+}
+
+func (h *ChatHistory) format() string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	if len(h.messages) == 0 {
+		return "No recent messages"
+	}
+
+	var builder strings.Builder
+
+	for _, msg := range h.messages {
+		builder.WriteString(fmt.Sprintf("%s - %s: %s\n", msg.Timestamp.Format("15:04:05"), msg.Username, msg.Text))
+	}
+
+	return builder.String()
+}

@@ -34,8 +34,9 @@ type Service struct {
 	twitchClient *twitch.Client
 	memorySvc    *memory.Service
 
-	tools []tools.Tool
-	llm   llms.Model
+	tools       []tools.Tool
+	llm         llms.Model
+	chatHistory ChatHistory
 
 	mu           sync.RWMutex
 	lastResponse time.Time
@@ -66,10 +67,12 @@ func New(di *do.Injector) (*Service, error) {
 }
 
 func (s *Service) ReactStreamerMessage(ctx context.Context, text string) error {
+	s.chatHistory.add(s.cfg.Twitch.Channel, text)
 	return s.processMessage(ctx, s.cfg.Twitch.Channel, text)
 }
 
 func (s *Service) ReactChatMessage(ctx context.Context, username, text string) error {
+	s.chatHistory.add(username, text)
 	return s.processMessage(ctx, username, text)
 }
 
@@ -148,10 +151,13 @@ func (s *Service) processMessage(ctx context.Context, username, text string) err
 * Лёнь, а вот на коврике на котором ты спишь вышито твое имя? или только группа крови?
 * привет стример я маленькая милая девочка без модерки, намёк понял?
 
-Последнее сообщение в чате:
+История чата:
+{chat_history}
+
+Ответь на это сообщение:
 {last_message}
 `),
-		InputVariables: []string{"last_message", "channel", "username"},
+		InputVariables: []string{"last_message", "channel", "username", "chat_history"},
 		TemplateFormat: prompts.TemplateFormatFString,
 	}
 
@@ -159,6 +165,7 @@ func (s *Service) processMessage(ctx context.Context, username, text string) err
 		"last_message": fmt.Sprintf("%s: %s", username, text),
 		"channel":      s.cfg.Twitch.Channel,
 		"username":     s.cfg.Twitch.Username,
+		"chat_history": s.chatHistory.format(),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to format prompt: %w", err)
@@ -187,6 +194,8 @@ func (s *Service) processMessage(ctx context.Context, username, text string) err
 	if err = s.sendMessage(response); err != nil {
 		return fmt.Errorf("failed to send message: %w", err)
 	}
+
+	s.chatHistory.add(s.cfg.Twitch.Username, response)
 
 	s.mu.Lock()
 	s.lastResponse = time.Now()
