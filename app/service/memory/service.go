@@ -24,6 +24,12 @@ type Service struct {
 func New(di *do.Injector) (*Service, error) {
 	_ = os.MkdirAll("data", 0755)
 
+	file, err := os.Create(dbFilePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create memory file: %w", err)
+	}
+	defer file.Close()
+
 	return &Service{
 		cfg: do.MustInvoke[*config.Config](di),
 	}, nil
