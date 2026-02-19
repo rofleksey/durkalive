@@ -30,7 +30,7 @@ func (l LogCallbackHandler) HandleLLMGenerateContentEnd(ctx context.Context, res
 }
 
 func (l LogCallbackHandler) HandleLLMError(ctx context.Context, err error) {
-	slog.DebugContext(ctx, "LLM error", "error", err)
+	slog.ErrorContext(ctx, "LLM error", "error", err)
 }
 
 func (l LogCallbackHandler) HandleChainStart(ctx context.Context, inputs map[string]any) {
@@ -42,7 +42,7 @@ func (l LogCallbackHandler) HandleChainEnd(ctx context.Context, outputs map[stri
 }
 
 func (l LogCallbackHandler) HandleChainError(ctx context.Context, err error) {
-	slog.DebugContext(ctx, "Chain error", "error", err)
+	slog.ErrorContext(ctx, "Chain error", "error", err)
 }
 
 func (l LogCallbackHandler) HandleToolStart(ctx context.Context, input string) {
@@ -50,11 +50,11 @@ func (l LogCallbackHandler) HandleToolStart(ctx context.Context, input string) {
 }
 
 func (l LogCallbackHandler) HandleToolEnd(ctx context.Context, output string) {
-	slog.DebugContext(ctx, "Tool end", "output", output)
+	//slog.DebugContext(ctx, "Tool end", "output", output)
 }
 
 func (l LogCallbackHandler) HandleToolError(ctx context.Context, err error) {
-	slog.DebugContext(ctx, "Tool error", "error", err)
+	slog.ErrorContext(ctx, "Tool error", "error", err)
 }
 
 func (l LogCallbackHandler) HandleAgentAction(ctx context.Context, action schema.AgentAction) {

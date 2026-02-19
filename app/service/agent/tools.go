@@ -50,7 +50,7 @@ func (s *Service) createMemoryTools() []tools.Tool {
 		},
 		&agentTool{
 			name:        "memory_create_relations",
-			description: "Create new relations between entities. Input must be JSON array of relations with from, to, and relationType fields (all strings).",
+			description: "Create new relations between EXISTING entities. Input must be JSON array of relations with from, to, and relationType fields (all strings).",
 			call: func(ctx context.Context, input string) (string, error) {
 				var relations []memory.Relation
 				if err := json.Unmarshal([]byte(input), &relations); err != nil {
@@ -68,7 +68,7 @@ func (s *Service) createMemoryTools() []tools.Tool {
 		},
 		&agentTool{
 			name:        "memory_add_observations",
-			description: "Add observations to existing entities. Input must be JSON array of AddObservationsRequest with entityName (string) and contents (string[]) fields.",
+			description: "Add observations to EXISTING entities. Input must be JSON array of AddObservationsRequest with entityName (string) and contents (string[]) fields.",
 			call: func(ctx context.Context, input string) (string, error) {
 				var observations []memory.AddObservationsRequest
 				if err := json.Unmarshal([]byte(input), &observations); err != nil {
@@ -102,7 +102,7 @@ func (s *Service) createMemoryTools() []tools.Tool {
 		},
 		&agentTool{
 			name:        "memory_delete_observations",
-			description: "Delete observations from entities. Input must be JSON array of objects with entityName (string) and observations ([]string) fields.",
+			description: "Delete observations from EXISTING entities. Input must be JSON array of objects with entityName (string) and observations ([]string) fields.",
 			call: func(ctx context.Context, input string) (string, error) {
 				var deletions []memory.DeleteObservationsRequest
 				if err := json.Unmarshal([]byte(input), &deletions); err != nil {
@@ -118,7 +118,7 @@ func (s *Service) createMemoryTools() []tools.Tool {
 		},
 		&agentTool{
 			name:        "memory_delete_relations",
-			description: "Delete relations. Input must be JSON array of relations with from, to, and relationType fields (all strings).",
+			description: "Delete EXISTING relations. Input must be JSON array of relations with from, to, and relationType fields (all strings).",
 			call: func(ctx context.Context, input string) (string, error) {
 				var relations []memory.Relation
 				if err := json.Unmarshal([]byte(input), &relations); err != nil {

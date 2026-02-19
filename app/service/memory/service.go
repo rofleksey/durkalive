@@ -5,6 +5,7 @@ import (
 	"durkalive/app/config"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,8 +18,7 @@ var dbFilePath = filepath.Join("data", "memory.json")
 
 type Service struct {
 	cfg *config.Config
-
-	mu sync.RWMutex
+	mu  sync.RWMutex
 }
 
 func New(di *do.Injector) (*Service, error) {
@@ -52,7 +52,7 @@ func (s *Service) loadGraph() (*KnowledgeGraph, error) {
 		}
 
 		var item jsonLineItem
-		if err := json.Unmarshal([]byte(line), &item); err != nil {
+		if err = json.Unmarshal([]byte(line), &item); err != nil {
 			return nil, fmt.Errorf("failed to parse JSON line: %w", err)
 		}
 
@@ -72,7 +72,7 @@ func (s *Service) loadGraph() (*KnowledgeGraph, error) {
 		}
 	}
 
-	if err := scanner.Err(); err != nil {
+	if err = scanner.Err(); err != nil {
 		return nil, fmt.Errorf("error reading memory file: %w", err)
 	}
 
@@ -118,7 +118,7 @@ func (s *Service) saveGraph(graph *KnowledgeGraph) error {
 		if err != nil {
 			return fmt.Errorf("failed to marshal relation: %w", err)
 		}
-		if _, err := writer.WriteString(string(data) + "\n"); err != nil {
+		if _, err = writer.WriteString(string(data) + "\n"); err != nil {
 			return fmt.Errorf("failed to write relation: %w", err)
 		}
 	}
@@ -160,6 +160,7 @@ func (s *Service) CreateEntities(entities []Entity) ([]Entity, error) {
 		return nil, err
 	}
 
+	slog.Info("Created entities", "entities", entities)
 	return newEntities, nil
 }
 
@@ -193,6 +194,7 @@ func (s *Service) CreateRelations(relations []Relation) ([]Relation, error) {
 		return nil, err
 	}
 
+	slog.Info("Create relations", "relations", relations)
 	return newRelations, nil
 }
 
@@ -241,9 +243,16 @@ func (s *Service) AddObservations(observations []AddObservationsRequest) ([]AddO
 		})
 	}
 
-	if err := s.saveGraph(graph); err != nil {
+	if err = s.saveGraph(graph); err != nil {
 		return nil, err
 	}
+
+	totalAdded := 0
+	for _, r := range results {
+		totalAdded += len(r.AddedObservations)
+	}
+
+	slog.Info("Created observations", "observations", observations)
 
 	return results, nil
 }
@@ -275,7 +284,12 @@ func (s *Service) DeleteEntities(entityNames []string) error {
 	}
 	graph.Relations = newRelations
 
-	return s.saveGraph(graph)
+	if err := s.saveGraph(graph); err != nil {
+		return err
+	}
+
+	slog.Info("Deleted entities", "entities", entityNames)
+	return nil
 }
 
 func (s *Service) DeleteObservations(deletions []DeleteObservationsRequest) error {
@@ -284,20 +298,21 @@ func (s *Service) DeleteObservations(deletions []DeleteObservationsRequest) erro
 		return err
 	}
 
+	totalDeleted := 0
 	for _, d := range deletions {
 		for i := range graph.Entities {
 			if graph.Entities[i].Name == d.EntityName {
-				// Create a set of observations to delete
 				toDelete := make(map[string]bool)
 				for _, obs := range d.Observations {
 					toDelete[obs] = true
 				}
 
-				// Filter out observations
 				var newObservations []string
 				for _, obs := range graph.Entities[i].Observations {
 					if !toDelete[obs] {
 						newObservations = append(newObservations, obs)
+					} else {
+						totalDeleted++
 					}
 				}
 				graph.Entities[i].Observations = newObservations
@@ -306,7 +321,12 @@ func (s *Service) DeleteObservations(deletions []DeleteObservationsRequest) erro
 		}
 	}
 
-	return s.saveGraph(graph)
+	if err = s.saveGraph(graph); err != nil {
+		return err
+	}
+
+	slog.Info("Deleted observations", "deletions", deletions)
+	return nil
 }
 
 func (s *Service) DeleteRelations(relations []Relation) error {
@@ -315,7 +335,6 @@ func (s *Service) DeleteRelations(relations []Relation) error {
 		return err
 	}
 
-	// Create a set for O(1) lookup
 	type relationKey struct {
 		from, to, relationType string
 	}
@@ -324,17 +343,24 @@ func (s *Service) DeleteRelations(relations []Relation) error {
 		toDelete[relationKey{r.From, r.To, r.RelationType}] = true
 	}
 
-	// Filter out relations to delete
 	var newRelations []Relation
+	deletedCount := 0
 	for _, r := range graph.Relations {
 		key := relationKey{r.From, r.To, r.RelationType}
 		if !toDelete[key] {
 			newRelations = append(newRelations, r)
+		} else {
+			deletedCount++
 		}
 	}
 	graph.Relations = newRelations
 
-	return s.saveGraph(graph)
+	if err = s.saveGraph(graph); err != nil {
+		return err
+	}
+
+	slog.Info("Deleted relations", "relations", relations)
+	return nil
 }
 
 func (s *Service) SearchNodes(query string) (*KnowledgeGraph, error) {
@@ -377,6 +403,11 @@ func (s *Service) SearchNodes(query string) (*KnowledgeGraph, error) {
 		}
 	}
 
+	slog.Info("Search completed",
+		"query", query,
+		"entities_found", len(filteredEntities),
+		"relations_found", len(filteredRelations))
+
 	return &KnowledgeGraph{
 		Entities:  filteredEntities,
 		Relations: filteredRelations,
@@ -412,6 +443,10 @@ func (s *Service) OpenNodes(names []string) (*KnowledgeGraph, error) {
 			filteredRelations = append(filteredRelations, r)
 		}
 	}
+
+	slog.Info("Opened nodes successfully",
+		"entities_included", len(filteredEntities),
+		"relations_included", len(filteredRelations))
 
 	return &KnowledgeGraph{
 		Entities:  filteredEntities,
