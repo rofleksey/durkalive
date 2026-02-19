@@ -7,6 +7,7 @@ import (
 	"durkalive/app/client/twitch_live"
 	"durkalive/app/config"
 	"durkalive/app/service/agent"
+	"durkalive/app/service/memory"
 	"durkalive/app/service/transcribe"
 	"durkalive/app/util/mylog"
 	"log/slog"
@@ -43,6 +44,7 @@ func main() {
 	do.Provide(di, twitch.NewClient)
 	do.Provide(di, twitch_live.NewClient)
 	do.Provide(di, transcribe.New)
+	do.Provide(di, memory.New)
 	do.Provide(di, agent.New)
 
 	slog.Info("Service started")
