@@ -10,14 +10,14 @@ import (
 
 	"durkalive/app/client/twitch"
 	"durkalive/app/config"
+	"durkalive/app/service/memory"
 
-	"github.com/mark3labs/mcp-go/client"
 	"github.com/samber/do"
 	"github.com/tmc/langchaingo/agents"
 	"github.com/tmc/langchaingo/chains"
 	"github.com/tmc/langchaingo/llms"
 	"github.com/tmc/langchaingo/llms/openai"
-	"github.com/tmc/langchaingo/memory"
+	lcgmemory "github.com/tmc/langchaingo/memory"
 	"github.com/tmc/langchaingo/prompts"
 	"github.com/tmc/langchaingo/tools"
 )
@@ -32,17 +32,13 @@ const (
 type Service struct {
 	cfg          *config.Config
 	twitchClient *twitch.Client
-	llm          llms.Model
-	mcpClients   []*mcpClientWrapper
+	memorySvc    *memory.Service
+
+	tools []tools.Tool
+	llm   llms.Model
 
 	mu           sync.RWMutex
 	lastResponse time.Time
-}
-
-type mcpClientWrapper struct {
-	client client.MCPClient
-	tools  []tools.Tool
-	name   string
 }
 
 func New(di *do.Injector) (*Service, error) {
@@ -60,12 +56,11 @@ func New(di *do.Injector) (*Service, error) {
 	s := &Service{
 		cfg:          cfg,
 		twitchClient: do.MustInvoke[*twitch.Client](di),
+		memorySvc:    do.MustInvoke[*memory.Service](di),
 		llm:          llm,
 	}
 
-	if err = s.initializeMCPClients(); err != nil {
-		return nil, fmt.Errorf("failed to initialize MCP clients: %w", err)
-	}
+	s.tools = s.createMemoryTools()
 
 	return s, nil
 }
@@ -83,25 +78,16 @@ func (s *Service) processMessage(ctx context.Context, username, text string) err
 	lastTime := s.lastResponse
 	s.mu.RUnlock()
 
-	if time.Since(lastTime) < responseCooldown {
-		return nil
-	}
-
-	var allTools []tools.Tool
-	for _, wrapper := range s.mcpClients {
-		allTools = append(allTools, wrapper.tools...)
-	}
-
 	agent := agents.NewOneShotAgent(
 		s.llm,
-		allTools,
+		s.tools,
 		agents.WithMaxIterations(maxIterations),
 	)
 
 	executor := agents.NewExecutor(
 		agent,
-		agents.WithMemory(memory.NewConversationBuffer(
-			memory.WithChatHistory(memory.NewChatMessageHistory()),
+		agents.WithMemory(lcgmemory.NewConversationBuffer(
+			lcgmemory.WithChatHistory(lcgmemory.NewChatMessageHistory()),
 		)),
 		agents.WithMaxIterations(maxIterations),
 		agents.WithCallbacksHandler(&LogCallbackHandler{}),
@@ -142,14 +128,14 @@ func (s *Service) processMessage(ctx context.Context, username, text string) err
 
 ВАЖНЫЕ ПРАВИЛА:
 * Постарайся отвечать на русском языке
-* Ты можешь использовать memory tool, чтобы запоминать информацию.
+* Ты можешь использовать memory_* tools, чтобы запоминать информацию в графе знаний.
 * Не запоминай все подряд, только важное, интересное или смешное. Особенно мемы и повторяющиеся фразы и особенности.
 * Старайся отвечать кратко, но с сарказмом.
 * Отвечай, только если тебя упомянули, задали вопрос или если сообщение содержит важные ключевые слова.
 * Не реагируй на каждое сообщение — будь ОЧЕНЬ избирательным.
 * Сообщения от {channel} - это результат работы Speech To Text, они могут быть не точными.
 * Учитывай контекст недавних сообщений в чате.
-* Если сообщение не требует ответа - в поле ответа пиши пустую строку. Ты все еще можешь использовать memory tool (если нужно) даже если решил не отвечать.
+* Если сообщение не требует ответа - в поле ответа пиши пустую строку. Ты все еще можешь использовать memory tools (если нужно) даже если решил не отвечать.
 * USE STRICT JSON SCHEMA FOR TOOLS
 
 Некоторые примеры фраз:
@@ -194,6 +180,9 @@ func (s *Service) processMessage(ctx context.Context, username, text string) err
 	if len(response) > maxMessageLength {
 		return fmt.Errorf("response is too long (%d > %d)", len(response), maxMessageLength)
 	}
+	if time.Since(lastTime) < responseCooldown {
+		return nil
+	}
 
 	if err = s.sendMessage(response); err != nil {
 		return fmt.Errorf("failed to send message: %w", err)
@@ -222,10 +211,5 @@ func (s *Service) sendMessage(text string) error {
 }
 
 func (s *Service) Close() error {
-	for _, wrapper := range s.mcpClients {
-		if err := wrapper.client.Close(); err != nil {
-			fmt.Printf("Error closing MCP client %s: %v\n", wrapper.name, err)
-		}
-	}
 	return nil
 }
