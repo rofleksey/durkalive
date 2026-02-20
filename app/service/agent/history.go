@@ -48,7 +48,7 @@ func (h *ChatHistory) format() string {
 	var builder strings.Builder
 
 	for _, msg := range h.messages {
-		builder.WriteString(fmt.Sprintf("%s - %s: %s\n", msg.Timestamp.Format("15:04:05"), msg.Username, msg.Text))
+		builder.WriteString(fmt.Sprintf("%s - %s: %s\n", formatTime(msg.Timestamp), msg.Username, msg.Text))
 	}
 
 	return builder.String()

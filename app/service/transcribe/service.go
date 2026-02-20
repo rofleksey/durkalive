@@ -61,6 +61,14 @@ func (s *Service) runTranscription(transCtx *Context, m3u8URL string) {
 		return s.runTranscriptionWithRetry(ctx, audioStream, transCtx)
 	})
 
+	g.Go(func() error {
+		err := ffmpeg.Wait()
+		if err == nil {
+			err = fmt.Errorf("ffmpeg process finished")
+		}
+		return err
+	})
+
 	err = g.Wait()
 	if err != nil && !errors.Is(err, context.Canceled) {
 		transCtx.Cancel(err)

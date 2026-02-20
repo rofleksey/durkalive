@@ -25,6 +25,7 @@ var systemPromptTemplate string
 
 const (
 	defaultTemperature = 1.3
+	minConfidence      = 0.85
 	maxReasonDuration  = 30 * time.Second
 	maxMessageLength   = 500
 )
@@ -92,8 +93,8 @@ func (s *Service) processMessage(ctx context.Context, username, text string) err
 		return fmt.Errorf("memorySvc.AddFacts: %w", err)
 	}
 
-	if result.Response == "" {
-		slog.Info("Response is not required")
+	if result.Response == "" || result.Confidence < minConfidence {
+		slog.Info("Response is not required", "confidence", result.Confidence, "text", result.Response)
 		return nil
 	}
 
@@ -101,7 +102,7 @@ func (s *Service) processMessage(ctx context.Context, username, text string) err
 		return fmt.Errorf("response is too long (%d > %d)", len(result.Response), maxMessageLength)
 	}
 
-	if err = s.sendMessage(result.Response); err != nil {
+	if err = s.sendMessage(result.Response, result.Confidence); err != nil {
 		return fmt.Errorf("failed to send message: %w", err)
 	}
 
@@ -120,9 +121,11 @@ func (s *Service) callAgent(ctx context.Context, username, text string) (*DurkaR
 	lastReplyTime := s.lastReplyTime
 	s.mu.RUnlock()
 
+	now := time.Now()
 	templateValues := map[string]any{
-		"last_message":    fmt.Sprintf("%s - %s: %s", time.Now().Format("15:04:05"), username, text),
-		"last_reply_time": lastReplyTime.Format("15:04:05"),
+		"last_message":    fmt.Sprintf("%s - %s: %s", formatTime(now), username, text),
+		"last_reply_time": formatTime(lastReplyTime),
+		"now":             formatTime(now),
 		"channel":         s.cfg.Twitch.Channel,
 		"username":        s.cfg.Twitch.Username,
 		"chat_history":    s.chatHistory.format(),
@@ -176,9 +179,12 @@ func (s *Service) callAgent(ctx context.Context, username, text string) (*DurkaR
 	return &response, nil
 }
 
-func (s *Service) sendMessage(text string) error {
+func (s *Service) sendMessage(text string, confidence float32) error {
 	if s.cfg.Twitch.DisableNotifications {
-		slog.Info("Replied to message (notifications disabled)", "text", text, "telegram", true)
+		slog.Info("Replied to message (notifications disabled)",
+			"text", text,
+			"confidence", confidence,
+			"telegram", true)
 		return nil
 	}
 
@@ -186,7 +192,10 @@ func (s *Service) sendMessage(text string) error {
 		return fmt.Errorf("failed to send message to twitch: %w", err)
 	}
 
-	slog.Info("Replied to message", "text", text, "telegram", true)
+	slog.Info("Replied to message",
+		"text", text,
+		"confidence", confidence,
+		"telegram", true)
 
 	return nil
 }

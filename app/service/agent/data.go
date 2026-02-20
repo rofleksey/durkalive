@@ -5,4 +5,5 @@ type DurkaResponse struct {
 	AddFacts    []string `json:"add_facts"`
 	RemoveFacts []int    `json:"remove_facts"`
 	Response    string   `json:"response"`
+	Confidence  float32  `json:"confidence"`
 }
