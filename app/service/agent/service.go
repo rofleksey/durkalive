@@ -24,7 +24,7 @@ import (
 var systemPromptTemplate string
 
 const (
-	minConfidence     = 0.7
+	minConfidence     = 0.6
 	maxReasonDuration = 30 * time.Second
 	maxMessageLength  = 500
 )
@@ -71,6 +71,10 @@ func (s *Service) ProcessMessage(ctx context.Context, username, text string) err
 	s.mu.Lock()
 	s.summary = result.NewSummary
 	s.mu.Unlock()
+
+	for i, value := range result.RemoveFacts {
+		result.RemoveFacts[i] = value - 1
+	}
 
 	if err = s.memorySvc.RemoveFacts(result.RemoveFacts); err != nil {
 		return fmt.Errorf("memorySvc.RemoveFacts: %w", err)
