@@ -84,14 +84,12 @@ func main() {
 	transcribeCtx := transcribeSvc.Start(appCtx, streamURL)
 
 	for sentence := range transcribeCtx.GetPhraseChannel() {
-		go func() {
-			slog.Info("Sentence", "text", sentence)
-			start := time.Now()
-			if err = agentSvc.ReactStreamerMessage(appCtx, sentence); err != nil {
-				slog.Warn("ReactStreamerMessage error", "error", err)
-			}
-			slog.Info("Processed sentence", "duration", time.Since(start))
-		}()
+		slog.Info("Sentence", "text", sentence)
+		start := time.Now()
+		if err = agentSvc.ReactStreamerMessage(appCtx, sentence); err != nil {
+			slog.Warn("ReactStreamerMessage error", "error", err)
+		}
+		slog.Info("Processed sentence", "duration", time.Since(start))
 	}
 	<-transcribeCtx.Done()
 

@@ -14,90 +14,58 @@ import (
 	"github.com/samber/do"
 )
 
-var dbFilePath = filepath.Join("data", "memory.json")
+var dbFilePath = filepath.Join("data", "facts.json")
 
 type Service struct {
-	cfg *config.Config
-	mu  sync.RWMutex
+	cfg   *config.Config
+	mu    sync.RWMutex
+	facts []string
 }
 
 func New(di *do.Injector) (*Service, error) {
 	_ = os.MkdirAll("data", 0755)
 
-	file, err := os.Create(dbFilePath)
+	facts, err := loadFacts()
 	if err != nil {
-		return nil, fmt.Errorf("failed to create memory file: %w", err)
+		slog.Warn("Error loading facts", "err", err)
+		facts = []string{}
 	}
-	defer file.Close()
 
 	return &Service{
-		cfg: do.MustInvoke[*config.Config](di),
+		cfg:   do.MustInvoke[*config.Config](di),
+		facts: facts,
 	}, nil
 }
 
-func (s *Service) loadGraph() (*KnowledgeGraph, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
+func loadFacts() ([]string, error) {
 	file, err := os.OpenFile(dbFilePath, os.O_RDONLY|os.O_CREATE, 0644)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open memory file: %w", err)
+		return nil, fmt.Errorf("failed to open facts file: %w", err)
 	}
 	defer file.Close()
 
-	graph := &KnowledgeGraph{
-		Entities: []*Entity{},
+	var facts []string
+	decoder := json.NewDecoder(file)
+	if err = decoder.Decode(&facts); err != nil {
+		return nil, fmt.Errorf("failed to decode facts: %w", err)
 	}
 
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
-		}
-
-		var item jsonLineItem
-		if err = json.Unmarshal([]byte(line), &item); err != nil {
-			return nil, fmt.Errorf("failed to parse JSON line: %w", err)
-		}
-
-		graph.Entities = append(graph.Entities, &Entity{
-			Name:  item.Name,
-			Facts: item.Facts,
-		})
-	}
-
-	if err = scanner.Err(); err != nil {
-		return nil, fmt.Errorf("error reading memory file: %w", err)
-	}
-
-	return graph, nil
+	return facts, nil
 }
 
-func (s *Service) saveGraph(graph *KnowledgeGraph) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
+func (s *Service) saveFacts() error {
 	file, err := os.OpenFile(dbFilePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
-		return fmt.Errorf("failed to create/open memory file: %w", err)
+		return fmt.Errorf("failed to create/open facts file: %w", err)
 	}
 	defer file.Close()
 
 	writer := bufio.NewWriter(file)
+	encoder := json.NewEncoder(writer)
+	encoder.SetIndent("", "  ")
 
-	for _, e := range graph.Entities {
-		item := jsonLineItem{
-			Name:  e.Name,
-			Facts: e.Facts,
-		}
-		data, err := json.Marshal(item)
-		if err != nil {
-			return fmt.Errorf("failed to marshal entity: %w", err)
-		}
-		if _, err = writer.WriteString(string(data) + "\n"); err != nil {
-			return fmt.Errorf("failed to write entity: %w", err)
-		}
+	if err = encoder.Encode(s.facts); err != nil {
+		return fmt.Errorf("failed to encode facts: %w", err)
 	}
 
 	if err = writer.Flush(); err != nil {
@@ -107,117 +75,111 @@ func (s *Service) saveGraph(graph *KnowledgeGraph) error {
 	return nil
 }
 
-func (s *Service) AddFacts(requests []AddFactsRequest) error {
-	graph, err := s.loadGraph()
-	if err != nil {
-		return err
+func (s *Service) AddFacts(facts []string) error {
+	if len(facts) == 0 {
+		return nil
 	}
 
-	for _, req := range requests {
-		var entity *Entity
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-		for i := range graph.Entities {
-			if graph.Entities[i].Name == req.EntityName {
-				entity = graph.Entities[i]
-				break
-			}
+	newFacts := make([]string, 0, len(facts))
+	existing := make(map[string]bool)
+
+	for _, fact := range s.facts {
+		existing[fact] = true
+	}
+
+	for _, fact := range facts {
+		fact = strings.TrimSpace(fact)
+		if fact == "" {
+			continue
 		}
-
-		if entity == nil {
-			graph.Entities = append(graph.Entities, &Entity{
-				Name:  req.EntityName,
-				Facts: req.Facts,
-			})
-		} else {
-			var newFacts []string
-			for _, content := range req.Facts {
-				exists := false
-				for _, obs := range entity.Facts {
-					if obs == content {
-						exists = true
-						break
-					}
-				}
-				if !exists {
-					newFacts = append(newFacts, content)
-				}
-			}
-
-			if len(newFacts) > 0 {
-				entity.Facts = append(entity.Facts, newFacts...)
-			}
+		if !existing[fact] {
+			newFacts = append(newFacts, fact)
+			existing[fact] = true
 		}
 	}
 
-	if err = s.saveGraph(graph); err != nil {
-		return err
+	if len(newFacts) == 0 {
+		return nil
 	}
 
-	slog.Info("Created facts", "facts", requests)
+	s.facts = append(s.facts, newFacts...)
+
+	if err := s.saveFacts(); err != nil {
+		return fmt.Errorf("failed to save facts after addition: %w", err)
+	}
+
+	slog.Info("Added facts", "facts", facts, "total", len(s.facts))
 
 	return nil
 }
 
-func (s *Service) DeleteFacts(deletions []DeleteFactsRequest) error {
-	graph, err := s.loadGraph()
-	if err != nil {
-		return err
+func (s *Service) RemoveFacts(indices []int) error {
+	if len(indices) == 0 {
+		return nil
 	}
 
-	totalDeleted := 0
-	for _, d := range deletions {
-		for i := range graph.Entities {
-			if graph.Entities[i].Name == d.EntityName {
-				toDelete := make(map[string]bool)
-				for _, obs := range d.Facts {
-					toDelete[obs] = true
-				}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-				var newFacts []string
-				for _, obs := range graph.Entities[i].Facts {
-					if !toDelete[obs] {
-						newFacts = append(newFacts, obs)
-					} else {
-						totalDeleted++
-					}
-				}
-				graph.Entities[i].Facts = newFacts
-				break
+	if len(s.facts) == 0 {
+		return fmt.Errorf("no facts to remove")
+	}
+
+	validIndices := make([]int, 0, len(indices))
+	indexMap := make(map[int]bool)
+
+	for _, idx := range indices {
+		if idx < 0 || idx >= len(s.facts) {
+			return fmt.Errorf("invalid index %d: out of range [0, %d]", idx, len(s.facts)-1)
+		}
+		if !indexMap[idx] {
+			validIndices = append(validIndices, idx)
+			indexMap[idx] = true
+		}
+	}
+
+	for i := 0; i < len(validIndices)-1; i++ {
+		for j := i + 1; j < len(validIndices); j++ {
+			if validIndices[i] < validIndices[j] {
+				validIndices[i], validIndices[j] = validIndices[j], validIndices[i]
 			}
 		}
 	}
 
-	if err = s.saveGraph(graph); err != nil {
-		return err
+	removedFacts := make([]string, 0, len(validIndices))
+
+	for _, idx := range validIndices {
+		removedFacts = append(removedFacts, s.facts[idx])
+		s.facts = append(s.facts[:idx], s.facts[idx+1:]...)
 	}
 
-	slog.Info("Deleted facts", "deletions", deletions)
+	if err := s.saveFacts(); err != nil {
+		return fmt.Errorf("failed to save facts after removal: %w", err)
+	}
+
+	slog.Info("Removed facts",
+		"count", len(removedFacts),
+		"remaining", len(s.facts),
+		"removed", removedFacts)
+
 	return nil
 }
 
-func (s *Service) SearchNodes(names []string) ([]*Entity, error) {
-	graph, err := s.loadGraph()
-	if err != nil {
-		return nil, err
+func (s *Service) Format() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if len(s.facts) == 0 {
+		return "No facts"
 	}
 
-	result := make([]*Entity, 0)
-
-	for _, name := range names {
-		name = strings.ToLower(name)
-
-		for _, e := range graph.Entities {
-			if strings.ToLower(e.Name) == name {
-				result = append(result, e)
-				continue
-			}
-		}
+	var builder strings.Builder
+	for i, fact := range s.facts {
+		builder.WriteString(fmt.Sprintf("%d - %s\n", i+1, fact))
 	}
 
-	slog.Info("Search completed",
-		"names", names,
-		"entities_count", len(result),
-	)
-
-	return result, nil
+	return builder.String()
 }
