@@ -24,10 +24,9 @@ import (
 var systemPromptTemplate string
 
 const (
-	defaultTemperature = 1.3
-	minConfidence      = 0.85
-	maxReasonDuration  = 30 * time.Second
-	maxMessageLength   = 500
+	minConfidence     = 0.7
+	maxReasonDuration = 30 * time.Second
+	maxMessageLength  = 500
 )
 
 type Service struct {
@@ -139,8 +138,8 @@ func (s *Service) callAgent(ctx context.Context, username, text string) (*DurkaR
 					Content: prompt,
 				},
 			},
-			Temperature:         defaultTemperature,
 			MaxCompletionTokens: 10000,
+			Temperature:         1.3,
 		},
 	)
 	if err != nil {

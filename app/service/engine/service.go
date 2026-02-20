@@ -43,6 +43,7 @@ func (s *Service) Run(ctx context.Context) {
 
 		if err := s.runIteration(ctx); err != nil {
 			slog.Error("Error running iteration", "error", err)
+			time.Sleep(time.Minute)
 		}
 	}
 }
