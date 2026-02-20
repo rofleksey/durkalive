@@ -82,7 +82,7 @@ func (s *Service) ProcessMessage(ctx context.Context, username, text string) err
 	}
 
 	if result.Response == "" || result.Confidence < minConfidence {
-		slog.Info("Response is not required", "confidence", result.Confidence, "text", result.Response)
+		slog.Debug("Response is not required", "confidence", result.Confidence, "text", result.Response)
 		return nil
 	}
 
