@@ -3,7 +3,9 @@ package transcribe
 import (
 	"context"
 	"durkalive/app/client/speechkit"
+	"durkalive/app/client/twitch_irc"
 	"durkalive/app/config"
+	"durkalive/app/service/queue"
 	"errors"
 	"fmt"
 	"io"
@@ -18,77 +20,88 @@ const (
 )
 
 type Service struct {
-	cfg    *config.Config
-	client *speechkit.YandexSpeechKit
+	cfg          *config.Config
+	speechClient *speechkit.YandexSpeechKit
+	ircClient    *twitch_irc.Client
+	queue        *queue.Service
 }
 
 func New(di *do.Injector) (*Service, error) {
 	return &Service{
-		cfg:    do.MustInvoke[*config.Config](di),
-		client: do.MustInvoke[*speechkit.YandexSpeechKit](di),
+		cfg:          do.MustInvoke[*config.Config](di),
+		speechClient: do.MustInvoke[*speechkit.YandexSpeechKit](di),
+		ircClient:    do.MustInvoke[*twitch_irc.Client](di),
+		queue:        do.MustInvoke[*queue.Service](di),
 	}, nil
 }
 
-func (s *Service) Start(ctx context.Context, m3u8URL string) *Context {
-	transCtx := NewContext(ctx)
+func (s *Service) Start(ctx context.Context, m3u8URL string) (context.Context, context.CancelCauseFunc) {
+	ctx, cancel := context.WithCancelCause(ctx)
 
-	go s.runTranscription(transCtx, m3u8URL)
+	go s.runTranscription(ctx, cancel, m3u8URL)
 
-	return transCtx
+	return ctx, cancel
 }
 
-func (s *Service) runTranscription(transCtx *Context, m3u8URL string) {
-	defer close(transCtx.phraseChan)
-	defer transCtx.Cancel(nil)
+func (s *Service) runTranscription(ctx context.Context, cancel context.CancelCauseFunc, m3u8URL string) {
+	defer cancel(nil)
 
-	ffmpeg, err := NewFFmpegStream(transCtx, m3u8URL)
+	ffmpeg, err := NewFFmpegStream(ctx, m3u8URL)
 	if err != nil {
-		transCtx.Cancel(fmt.Errorf("failed to create ffmpeg stream: %w", err))
+		cancel(fmt.Errorf("failed to create ffmpeg stream: %w", err))
 		return
 	}
 
 	if err = ffmpeg.Start(); err != nil {
-		transCtx.Cancel(fmt.Errorf("failed to start ffmpeg: %w", err))
+		cancel(fmt.Errorf("failed to start ffmpeg: %w", err))
 		return
 	}
 	defer ffmpeg.Stop()
 
 	audioStream := ffmpeg.GetAudioStream()
 
-	g, ctx := errgroup.WithContext(transCtx)
+	go func() {
+		cancel(s.runTranscriptionWithRetry(ctx, audioStream))
+	}()
 
-	g.Go(func() error {
-		return s.runTranscriptionWithRetry(ctx, audioStream, transCtx)
-	})
+	go func() {
+		s.ircClient.JoinChannel(s.cfg.Twitch.Channel)
+		s.ircClient.SetListener(func(channel, username, messageID, text string, tags map[string]string) {
+			s.queue.Add(username, text)
+		})
 
-	g.Go(func() error {
+		cancel(s.ircClient.Run())
+	}()
+	defer s.ircClient.Disconnect()
+
+	go func() {
 		err := ffmpeg.Wait()
 		if err == nil {
 			err = fmt.Errorf("ffmpeg process finished")
 		}
-		return err
-	})
+		cancel(err)
+	}()
 
-	err = g.Wait()
-	if err != nil && !errors.Is(err, context.Canceled) {
-		transCtx.Cancel(err)
-		slog.Error("transcription failed", "error", err)
+	<-ctx.Done()
+
+	if err = context.Cause(ctx); err != nil && !errors.Is(err, context.Canceled) {
+		slog.Error("Transcription failed", "error", err)
 	}
 }
 
-func (s *Service) runTranscriptionWithRetry(ctx context.Context, audioSrc io.Reader, transCtx *Context) error {
+func (s *Service) runTranscriptionWithRetry(ctx context.Context, audioSrc io.Reader) error {
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			err := s.runSingleTranscription(ctx, audioSrc, transCtx)
+			err := s.runSingleTranscription(ctx, audioSrc)
 			if err == nil {
 				return nil
 			}
 
 			if errors.Is(err, io.EOF) {
-				slog.Info("received EOF from speechkit, restarting client")
+				slog.Info("received EOF from speechkit, restarting speechClient")
 				continue
 			}
 
@@ -97,8 +110,8 @@ func (s *Service) runTranscriptionWithRetry(ctx context.Context, audioSrc io.Rea
 	}
 }
 
-func (s *Service) runSingleTranscription(ctx context.Context, audioSrc io.Reader, transCtx *Context) error {
-	handle, err := s.client.Start(ctx)
+func (s *Service) runSingleTranscription(ctx context.Context, audioSrc io.Reader) error {
+	handle, err := s.speechClient.Start(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to start transcription: %w", err)
 	}
@@ -111,7 +124,7 @@ func (s *Service) runSingleTranscription(ctx context.Context, audioSrc io.Reader
 	})
 
 	g.Go(func() error {
-		return s.receivePhrases(handle, transCtx)
+		return s.receivePhrases(ctx, handle)
 	})
 
 	return g.Wait()
@@ -145,15 +158,21 @@ func (s *Service) streamAudio(ctx context.Context, audioSrc io.Reader, handle *s
 	}
 }
 
-func (s *Service) receivePhrases(handle *speechkit.Handle, transCtx *Context) error {
+func (s *Service) receivePhrases(ctx context.Context, handle *speechkit.Handle) error {
 	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
 		sentences, err := handle.Recv()
 		if err != nil {
 			return fmt.Errorf("Recv: %w", err)
 		}
 
 		for _, text := range sentences {
-			transCtx.sendPhrase(text)
+			s.queue.Add(s.cfg.Twitch.Channel, text)
 		}
 	}
 }

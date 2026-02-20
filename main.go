@@ -4,18 +4,19 @@ import (
 	"context"
 	"durkalive/app/client/speechkit"
 	"durkalive/app/client/twitch"
+	"durkalive/app/client/twitch_irc"
 	"durkalive/app/client/twitch_live"
 	"durkalive/app/config"
 	"durkalive/app/service/agent"
+	"durkalive/app/service/engine"
 	"durkalive/app/service/memory"
+	"durkalive/app/service/queue"
 	"durkalive/app/service/transcribe"
 	"durkalive/app/util/mylog"
 	"log/slog"
 	"os"
 	"os/signal"
-	"time"
 
-	"github.com/elliotchance/pie/v2"
 	"github.com/gofiber/fiber/v2/log"
 	"github.com/samber/do"
 )
@@ -44,9 +45,12 @@ func main() {
 	do.Provide(di, speechkit.NewClient)
 	do.Provide(di, twitch.NewClient)
 	do.Provide(di, twitch_live.NewClient)
+	do.Provide(di, twitch_irc.NewClient)
 	do.Provide(di, transcribe.New)
 	do.Provide(di, memory.New)
 	do.Provide(di, agent.New)
+	do.Provide(di, queue.New)
+	do.Provide(di, engine.New)
 
 	slog.Info("Service started")
 
@@ -55,47 +59,15 @@ func main() {
 		signal.Notify(sigint, os.Interrupt)
 		<-sigint
 
-		log.Info("Shutting down server...")
+		log.Info("Shutting down...")
 
 		cancel()
 	}()
 
 	go do.MustInvoke[*twitch.Client](di).RunRefreshLoop(appCtx)
+	go do.MustInvoke[*twitch_irc.Client](di).RunRefreshLoop(appCtx)
 
-	agentSvc := do.MustInvoke[*agent.Service](di)
+	go do.MustInvoke[*engine.Service](di).Run(appCtx)
 
-	liveClient := do.MustInvoke[*twitch_live.Client](di)
-	qualities, err := liveClient.GetM3U8(appCtx, cfg.Twitch.Channel)
-	if err != nil {
-		log.Fatalf("get qualities failed: %v", err)
-	}
-
-	qualityIndex := pie.FindFirstUsing(qualities, func(q twitch_live.StreamQuality) bool {
-		return q.Quality == "audio_only"
-	})
-	if qualityIndex < 0 {
-		qualityIndex = 0
-	}
-
-	streamQuality := qualities[qualityIndex]
-	streamURL := streamQuality.URL
-
-	transcribeSvc := do.MustInvoke[*transcribe.Service](di)
-	transcribeCtx := transcribeSvc.Start(appCtx, streamURL)
-
-	for sentence := range transcribeCtx.GetPhraseChannel() {
-		slog.Info("Sentence", "text", sentence)
-		start := time.Now()
-		if err = agentSvc.ReactStreamerMessage(appCtx, sentence); err != nil {
-			slog.Warn("ReactStreamerMessage error", "error", err)
-		}
-		slog.Info("Processed sentence", "duration", time.Since(start))
-	}
-	<-transcribeCtx.Done()
-
-	if transcribeCtx.Err() != nil {
-		slog.Error("Transcribe failed", "err", transcribeCtx.Err())
-	}
-
-	//<-appCtx.Done()
+	<-appCtx.Done()
 }

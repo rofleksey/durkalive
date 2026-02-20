@@ -63,19 +63,7 @@ func New(di *do.Injector) (*Service, error) {
 	return s, nil
 }
 
-func (s *Service) ReactStreamerMessage(ctx context.Context, text string) error {
-	defer s.chatHistory.add(s.cfg.Twitch.Channel, text)
-
-	return s.processMessage(ctx, s.cfg.Twitch.Channel, text)
-}
-
-func (s *Service) ReactChatMessage(ctx context.Context, username, text string) error {
-	defer s.chatHistory.add(username, text)
-
-	return s.processMessage(ctx, username, text)
-}
-
-func (s *Service) processMessage(ctx context.Context, username, text string) error {
+func (s *Service) ProcessMessage(ctx context.Context, username, text string) error {
 	result, err := s.callAgent(ctx, username, text)
 	if err != nil {
 		return fmt.Errorf("callAgent: %w", err)

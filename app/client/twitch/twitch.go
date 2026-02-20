@@ -156,3 +156,7 @@ func (c *Client) RunRefreshLoop(ctx context.Context) {
 		}
 	}
 }
+
+func (c *Client) AccessToken() string {
+	return c.userClient.GetUserAccessToken()
+}

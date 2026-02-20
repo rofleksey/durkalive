@@ -4,6 +4,7 @@ go 1.25.1
 
 require (
 	github.com/elliotchance/pie/v2 v2.9.1
+	github.com/gempir/go-twitch-irc/v4 v4.3.1
 	github.com/go-playground/validator/v10 v10.30.1
 	github.com/gofiber/fiber/v2 v2.52.11
 	github.com/nicklaw5/helix/v2 v2.32.0
