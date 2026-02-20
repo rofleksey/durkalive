@@ -26,7 +26,6 @@ var systemPromptTemplate string
 const (
 	defaultTemperature = 1.3
 	maxReasonDuration  = 30 * time.Second
-	responseCooldown   = time.Second
 	maxMessageLength   = 500
 )
 
@@ -38,9 +37,9 @@ type Service struct {
 	client      *openai.Client
 	chatHistory ChatHistory
 
-	mu           sync.RWMutex
-	summary      string
-	lastResponse time.Time
+	mu            sync.RWMutex
+	summary       string
+	lastReplyTime time.Time
 }
 
 func New(di *do.Injector) (*Service, error) {
@@ -98,15 +97,6 @@ func (s *Service) processMessage(ctx context.Context, username, text string) err
 		return nil
 	}
 
-	s.mu.RLock()
-	lastTime := s.lastResponse
-	s.mu.RUnlock()
-
-	if time.Since(lastTime) < responseCooldown {
-		slog.Info("Hit response cooldown", "username", username)
-		return nil
-	}
-
 	if len(result.Response) > maxMessageLength {
 		return fmt.Errorf("response is too long (%d > %d)", len(result.Response), maxMessageLength)
 	}
@@ -118,7 +108,7 @@ func (s *Service) processMessage(ctx context.Context, username, text string) err
 	s.chatHistory.add(s.cfg.Twitch.Username, result.Response)
 
 	s.mu.Lock()
-	s.lastResponse = time.Now()
+	s.lastReplyTime = time.Now()
 	s.mu.Unlock()
 
 	return nil
@@ -127,15 +117,17 @@ func (s *Service) processMessage(ctx context.Context, username, text string) err
 func (s *Service) callAgent(ctx context.Context, username, text string) (*DurkaResponse, error) {
 	s.mu.RLock()
 	summary := s.summary
+	lastReplyTime := s.lastReplyTime
 	s.mu.RUnlock()
 
 	templateValues := map[string]any{
-		"last_message": fmt.Sprintf("%s - %s: %s", time.Now().Format("15:04:05"), username, text),
-		"channel":      s.cfg.Twitch.Channel,
-		"username":     s.cfg.Twitch.Username,
-		"chat_history": s.chatHistory.format(),
-		"summary":      summary,
-		"facts":        s.memorySvc.Format(),
+		"last_message":    fmt.Sprintf("%s - %s: %s", time.Now().Format("15:04:05"), username, text),
+		"last_reply_time": lastReplyTime.Format("15:04:05"),
+		"channel":         s.cfg.Twitch.Channel,
+		"username":        s.cfg.Twitch.Username,
+		"chat_history":    s.chatHistory.format(),
+		"summary":         summary,
+		"facts":           s.memorySvc.Format(),
 	}
 
 	prompt := systemPromptTemplate
