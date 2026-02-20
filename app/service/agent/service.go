@@ -24,7 +24,7 @@ import (
 var systemPromptTemplate string
 
 const (
-	minConfidence     = 0.6
+	minConfidence     = 0.7
 	maxReasonDuration = 30 * time.Second
 	maxMessageLength  = 500
 )
