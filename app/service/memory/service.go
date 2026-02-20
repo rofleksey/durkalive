@@ -46,8 +46,7 @@ func (s *Service) loadGraph() (*KnowledgeGraph, error) {
 	defer file.Close()
 
 	graph := &KnowledgeGraph{
-		Entities:  []Entity{},
-		Relations: []Relation{},
+		Entities: []*Entity{},
 	}
 
 	scanner := bufio.NewScanner(file)
@@ -62,20 +61,10 @@ func (s *Service) loadGraph() (*KnowledgeGraph, error) {
 			return nil, fmt.Errorf("failed to parse JSON line: %w", err)
 		}
 
-		switch item.Type {
-		case "entity":
-			graph.Entities = append(graph.Entities, Entity{
-				Name:         item.Name,
-				EntityType:   item.EntityType,
-				Observations: item.Observations,
-			})
-		case "relation":
-			graph.Relations = append(graph.Relations, Relation{
-				From:         item.From,
-				To:           item.To,
-				RelationType: item.RelationType,
-			})
-		}
+		graph.Entities = append(graph.Entities, &Entity{
+			Name:  item.Name,
+			Facts: item.Facts,
+		})
 	}
 
 	if err = scanner.Err(); err != nil {
@@ -89,9 +78,9 @@ func (s *Service) saveGraph(graph *KnowledgeGraph) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	file, err := os.Create(dbFilePath)
+	file, err := os.OpenFile(dbFilePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
-		return fmt.Errorf("failed to create memory file: %w", err)
+		return fmt.Errorf("failed to create/open memory file: %w", err)
 	}
 	defer file.Close()
 
@@ -99,10 +88,8 @@ func (s *Service) saveGraph(graph *KnowledgeGraph) error {
 
 	for _, e := range graph.Entities {
 		item := jsonLineItem{
-			Type:         "entity",
-			Name:         e.Name,
-			EntityType:   e.EntityType,
-			Observations: e.Observations,
+			Name:  e.Name,
+			Facts: e.Facts,
 		}
 		data, err := json.Marshal(item)
 		if err != nil {
@@ -113,22 +100,6 @@ func (s *Service) saveGraph(graph *KnowledgeGraph) error {
 		}
 	}
 
-	for _, r := range graph.Relations {
-		item := jsonLineItem{
-			Type:         "relation",
-			From:         r.From,
-			To:           r.To,
-			RelationType: r.RelationType,
-		}
-		data, err := json.Marshal(item)
-		if err != nil {
-			return fmt.Errorf("failed to marshal relation: %w", err)
-		}
-		if _, err = writer.WriteString(string(data) + "\n"); err != nil {
-			return fmt.Errorf("failed to write relation: %w", err)
-		}
-	}
-
 	if err = writer.Flush(); err != nil {
 		return fmt.Errorf("failed to flush writer: %w", err)
 	}
@@ -136,169 +107,58 @@ func (s *Service) saveGraph(graph *KnowledgeGraph) error {
 	return nil
 }
 
-func (s *Service) CreateEntities(entities []Entity) ([]Entity, error) {
+func (s *Service) AddFacts(requests []AddFactsRequest) error {
 	graph, err := s.loadGraph()
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	var newEntities []Entity
-	for _, e := range entities {
-		exists := false
-		for _, existing := range graph.Entities {
-			if existing.Name == e.Name {
-				exists = true
-				break
-			}
-		}
-		if !exists {
-			newEntities = append(newEntities, e)
-		}
-	}
-
-	if len(newEntities) == 0 {
-		return []Entity{}, nil
-	}
-
-	graph.Entities = append(graph.Entities, newEntities...)
-
-	if err = s.saveGraph(graph); err != nil {
-		return nil, err
-	}
-
-	slog.Info("Created entities", "entities", entities)
-	return newEntities, nil
-}
-
-func (s *Service) CreateRelations(relations []Relation) ([]Relation, error) {
-	graph, err := s.loadGraph()
-	if err != nil {
-		return nil, err
-	}
-
-	var newRelations []Relation
-	for _, r := range relations {
-		exists := false
-		for _, existing := range graph.Relations {
-			if existing.From == r.From && existing.To == r.To && existing.RelationType == r.RelationType {
-				exists = true
-				break
-			}
-		}
-		if !exists {
-			newRelations = append(newRelations, r)
-		}
-	}
-
-	if len(newRelations) == 0 {
-		return []Relation{}, nil
-	}
-
-	graph.Relations = append(graph.Relations, newRelations...)
-
-	if err = s.saveGraph(graph); err != nil {
-		return nil, err
-	}
-
-	slog.Info("Create relations", "relations", relations)
-	return newRelations, nil
-}
-
-func (s *Service) AddObservations(observations []AddObservationsRequest) ([]AddObservationsResult, error) {
-	graph, err := s.loadGraph()
-	if err != nil {
-		return nil, err
-	}
-
-	var results []AddObservationsResult
-
-	for _, o := range observations {
+	for _, req := range requests {
 		var entity *Entity
+
 		for i := range graph.Entities {
-			if graph.Entities[i].Name == o.EntityName {
-				entity = &graph.Entities[i]
+			if graph.Entities[i].Name == req.EntityName {
+				entity = graph.Entities[i]
 				break
 			}
 		}
 
 		if entity == nil {
-			return nil, fmt.Errorf("entity with name %s not found", o.EntityName)
-		}
-
-		var newObservations []string
-		for _, content := range o.Contents {
-			exists := false
-			for _, obs := range entity.Observations {
-				if obs == content {
-					exists = true
-					break
+			graph.Entities = append(graph.Entities, &Entity{
+				Name:  req.EntityName,
+				Facts: req.Facts,
+			})
+		} else {
+			var newFacts []string
+			for _, content := range req.Facts {
+				exists := false
+				for _, obs := range entity.Facts {
+					if obs == content {
+						exists = true
+						break
+					}
+				}
+				if !exists {
+					newFacts = append(newFacts, content)
 				}
 			}
-			if !exists {
-				newObservations = append(newObservations, content)
+
+			if len(newFacts) > 0 {
+				entity.Facts = append(entity.Facts, newFacts...)
 			}
 		}
-
-		if len(newObservations) > 0 {
-			entity.Observations = append(entity.Observations, newObservations...)
-		}
-
-		results = append(results, AddObservationsResult{
-			EntityName:        o.EntityName,
-			AddedObservations: newObservations,
-		})
 	}
 
 	if err = s.saveGraph(graph); err != nil {
-		return nil, err
-	}
-
-	totalAdded := 0
-	for _, r := range results {
-		totalAdded += len(r.AddedObservations)
-	}
-
-	slog.Info("Created observations", "observations", observations)
-
-	return results, nil
-}
-
-func (s *Service) DeleteEntities(entityNames []string) error {
-	graph, err := s.loadGraph()
-	if err != nil {
 		return err
 	}
 
-	namesToDelete := make(map[string]bool)
-	for _, name := range entityNames {
-		namesToDelete[name] = true
-	}
+	slog.Info("Created facts", "facts", requests)
 
-	var newEntities []Entity
-	for _, e := range graph.Entities {
-		if !namesToDelete[e.Name] {
-			newEntities = append(newEntities, e)
-		}
-	}
-	graph.Entities = newEntities
-
-	var newRelations []Relation
-	for _, r := range graph.Relations {
-		if !namesToDelete[r.From] && !namesToDelete[r.To] {
-			newRelations = append(newRelations, r)
-		}
-	}
-	graph.Relations = newRelations
-
-	if err := s.saveGraph(graph); err != nil {
-		return err
-	}
-
-	slog.Info("Deleted entities", "entities", entityNames)
 	return nil
 }
 
-func (s *Service) DeleteObservations(deletions []DeleteObservationsRequest) error {
+func (s *Service) DeleteFacts(deletions []DeleteFactsRequest) error {
 	graph, err := s.loadGraph()
 	if err != nil {
 		return err
@@ -309,19 +169,19 @@ func (s *Service) DeleteObservations(deletions []DeleteObservationsRequest) erro
 		for i := range graph.Entities {
 			if graph.Entities[i].Name == d.EntityName {
 				toDelete := make(map[string]bool)
-				for _, obs := range d.Observations {
+				for _, obs := range d.Facts {
 					toDelete[obs] = true
 				}
 
-				var newObservations []string
-				for _, obs := range graph.Entities[i].Observations {
+				var newFacts []string
+				for _, obs := range graph.Entities[i].Facts {
 					if !toDelete[obs] {
-						newObservations = append(newObservations, obs)
+						newFacts = append(newFacts, obs)
 					} else {
 						totalDeleted++
 					}
 				}
-				graph.Entities[i].Observations = newObservations
+				graph.Entities[i].Facts = newFacts
 				break
 			}
 		}
@@ -331,131 +191,33 @@ func (s *Service) DeleteObservations(deletions []DeleteObservationsRequest) erro
 		return err
 	}
 
-	slog.Info("Deleted observations", "deletions", deletions)
+	slog.Info("Deleted facts", "deletions", deletions)
 	return nil
 }
 
-func (s *Service) DeleteRelations(relations []Relation) error {
-	graph, err := s.loadGraph()
-	if err != nil {
-		return err
-	}
-
-	type relationKey struct {
-		from, to, relationType string
-	}
-	toDelete := make(map[relationKey]bool)
-	for _, r := range relations {
-		toDelete[relationKey{r.From, r.To, r.RelationType}] = true
-	}
-
-	var newRelations []Relation
-	deletedCount := 0
-	for _, r := range graph.Relations {
-		key := relationKey{r.From, r.To, r.RelationType}
-		if !toDelete[key] {
-			newRelations = append(newRelations, r)
-		} else {
-			deletedCount++
-		}
-	}
-	graph.Relations = newRelations
-
-	if err = s.saveGraph(graph); err != nil {
-		return err
-	}
-
-	slog.Info("Deleted relations", "relations", relations)
-	return nil
-}
-
-func (s *Service) SearchNodes(query string) (*KnowledgeGraph, error) {
+func (s *Service) SearchNodes(names []string) ([]*Entity, error) {
 	graph, err := s.loadGraph()
 	if err != nil {
 		return nil, err
 	}
 
-	query = strings.ToLower(query)
+	result := make([]*Entity, 0)
 
-	var filteredEntities []Entity
-	filteredEntityNames := make(map[string]bool)
+	for _, name := range names {
+		name = strings.ToLower(name)
 
-	for _, e := range graph.Entities {
-		if strings.Contains(strings.ToLower(e.Name), query) {
-			filteredEntities = append(filteredEntities, e)
-			filteredEntityNames[e.Name] = true
-			continue
-		}
-
-		if strings.Contains(strings.ToLower(e.EntityType), query) {
-			filteredEntities = append(filteredEntities, e)
-			filteredEntityNames[e.Name] = true
-			continue
-		}
-
-		for _, obs := range e.Observations {
-			if strings.Contains(strings.ToLower(obs), query) {
-				filteredEntities = append(filteredEntities, e)
-				filteredEntityNames[e.Name] = true
-				break
+		for _, e := range graph.Entities {
+			if strings.ToLower(e.Name) == name {
+				result = append(result, e)
+				continue
 			}
-		}
-	}
-
-	var filteredRelations []Relation
-	for _, r := range graph.Relations {
-		if filteredEntityNames[r.From] && filteredEntityNames[r.To] {
-			filteredRelations = append(filteredRelations, r)
 		}
 	}
 
 	slog.Info("Search completed",
-		"query", query,
-		"entities_found", len(filteredEntities),
-		"relations_found", len(filteredRelations))
+		"names", names,
+		"entities_count", len(result),
+	)
 
-	return &KnowledgeGraph{
-		Entities:  filteredEntities,
-		Relations: filteredRelations,
-	}, nil
-}
-
-func (s *Service) OpenNodes(names []string) (*KnowledgeGraph, error) {
-	graph, err := s.loadGraph()
-	if err != nil {
-		return nil, err
-	}
-
-	namesToInclude := make(map[string]bool)
-	for _, name := range names {
-		namesToInclude[name] = true
-	}
-
-	var filteredEntities []Entity
-	for _, e := range graph.Entities {
-		if namesToInclude[e.Name] {
-			filteredEntities = append(filteredEntities, e)
-		}
-	}
-
-	includedNames := make(map[string]bool)
-	for _, e := range filteredEntities {
-		includedNames[e.Name] = true
-	}
-
-	var filteredRelations []Relation
-	for _, r := range graph.Relations {
-		if includedNames[r.From] && includedNames[r.To] {
-			filteredRelations = append(filteredRelations, r)
-		}
-	}
-
-	slog.Info("Opened nodes successfully",
-		"entities_included", len(filteredEntities),
-		"relations_included", len(filteredRelations))
-
-	return &KnowledgeGraph{
-		Entities:  filteredEntities,
-		Relations: filteredRelations,
-	}, nil
+	return result, nil
 }

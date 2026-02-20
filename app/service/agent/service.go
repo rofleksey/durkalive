@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -23,10 +24,11 @@ import (
 )
 
 const (
-	maxReasonDuration = 30 * time.Second
-	maxIterations     = 12
-	responseCooldown  = time.Second
-	maxMessageLength  = 500
+	maxReasonDuration       = 30 * time.Second
+	maxIterations           = 12
+	responseCooldown        = time.Second
+	maxMessageLength        = 500
+	conversationIdleTimeout = 2 * time.Minute
 )
 
 type Service struct {
@@ -34,12 +36,19 @@ type Service struct {
 	twitchClient *twitch.Client
 	memorySvc    *memory.Service
 
-	tools       []tools.Tool
-	llm         llms.Model
-	chatHistory ChatHistory
+	llm          llms.Model
+	chatHistory  ChatHistory
+	conversation ConversationState
 
 	mu           sync.RWMutex
 	lastResponse time.Time
+}
+
+type ConversationState struct {
+	active     bool
+	summary    string
+	lastActive time.Time
+	mu         sync.RWMutex
 }
 
 func New(di *do.Injector) (*Service, error) {
@@ -59,42 +68,215 @@ func New(di *do.Injector) (*Service, error) {
 		twitchClient: do.MustInvoke[*twitch.Client](di),
 		memorySvc:    do.MustInvoke[*memory.Service](di),
 		llm:          llm,
+		conversation: ConversationState{
+			active:     false,
+			summary:    "",
+			lastActive: time.Now(),
+		},
 	}
-
-	s.tools = s.createMemoryTools()
 
 	return s, nil
 }
 
 func (s *Service) ReactStreamerMessage(ctx context.Context, text string) error {
-	s.chatHistory.add(s.cfg.Twitch.Channel, text)
+	defer s.chatHistory.add(s.cfg.Twitch.Channel, text)
+
 	return s.processMessage(ctx, s.cfg.Twitch.Channel, text)
 }
 
 func (s *Service) ReactChatMessage(ctx context.Context, username, text string) error {
-	s.chatHistory.add(username, text)
+	defer s.chatHistory.add(username, text)
+
 	return s.processMessage(ctx, username, text)
 }
 
 func (s *Service) processMessage(ctx context.Context, username, text string) error {
+	s.conversation.mu.Lock()
+	now := time.Now()
+
+	if !s.conversation.active {
+		if now.Sub(s.conversation.lastActive) > conversationIdleTimeout {
+			s.conversation.summary = ""
+		}
+		s.conversation.lastActive = now
+	}
+	s.conversation.mu.Unlock()
+
+	summary, shouldRespond, err := s.processWithSummaryAgent(ctx, username, text)
+	if err != nil {
+		return fmt.Errorf("summary agent failed: %w", err)
+	}
+	slog.Info("Updated summary", "summary", summary)
+
+	s.conversation.mu.Lock()
+	s.conversation.summary = summary
+	s.conversation.lastActive = time.Now()
+	if shouldRespond {
+		s.conversation.active = true
+	} else {
+		s.conversation.active = false
+	}
+	s.conversation.mu.Unlock()
+
+	if !shouldRespond {
+		slog.Info("no response needed", "username", username)
+		return nil
+	}
+
 	s.mu.RLock()
 	lastTime := s.lastResponse
 	s.mu.RUnlock()
 
-	agent := agents.NewOneShotAgent(
+	if time.Since(lastTime) < responseCooldown {
+		slog.Info("hit response cooldown", "username", username)
+		return nil
+	}
+
+	response, err := s.generateResponse(ctx, username, text)
+	if err != nil {
+		return fmt.Errorf("response generation failed: %w", err)
+	}
+
+	if response == "" {
+		slog.Info("empty response generated")
+		return nil
+	}
+
+	if len(response) > maxMessageLength {
+		return fmt.Errorf("response is too long (%d > %d)", len(response), maxMessageLength)
+	}
+
+	if err = s.sendMessage(response); err != nil {
+		return fmt.Errorf("failed to send message: %w", err)
+	}
+
+	s.chatHistory.add(s.cfg.Twitch.Username, response)
+
+	s.mu.Lock()
+	s.lastResponse = time.Now()
+	s.mu.Unlock()
+
+	return nil
+}
+
+func (s *Service) processWithSummaryAgent(ctx context.Context, username, text string) (string, bool, error) {
+	summaryAgent := agents.NewOneShotAgent(
 		s.llm,
-		s.tools,
+		s.createMemoryTools(),
 		agents.WithMaxIterations(maxIterations),
 	)
 
 	executor := agents.NewExecutor(
-		agent,
+		summaryAgent,
+		agents.WithMaxIterations(maxIterations),
+		agents.WithCallbacksHandler(&LogCallbackHandler{}),
+	)
+
+	s.conversation.mu.RLock()
+	currentSummary := s.conversation.summary
+	s.conversation.mu.RUnlock()
+
+	template := prompts.PromptTemplate{
+		Template: strings.TrimSpace(`
+Ты — часть системы Twitch чат-бота. Твоя задача — анализировать сообщения и обновлять краткую сводку разговора.
+
+Текущая сводка разговора:
+{current_summary}
+
+История чата:
+{chat_history}
+
+Новое сообщение в чате (от {username}):
+{message}
+
+Твои задачи:
+1. Используй memory tools для сохранения важной информации (факты о зрителях, мемы, повторяющиеся темы)
+2. Обнови краткую сводку разговора (1-6 предложений), отражающую текущий контекст
+3. Определи, должен ли бот ответить на это сообщение
+
+Память:
+* ЗАПРЕЩЕНО запоминать все подряд. МОЖНО запоминать только факты или особенности (например, любит counter-strike, всегда использует осколок и.т.д.).
+* ЗАПРЕЩЕНО запоминать информацию, которая может измениться в ближайшем будущем.
+* РАЗРЕШЕНО использовать только entity с именами пользователей чата или global. Любые другие названия entity ЗАПРЕЩЕНЫ.
+* ЗАПРЕЩЕНО запоминать историю последних сообщений или подробности текущего разговора, они будет предоставлены тебе в этом промпте.
+
+Правила определения необходимости ответа:
+- Ответь ДА, если:
+  * Тебя явно упомянули (@{bot_username}, "бот", "Дурка")
+  * Задан прямой вопрос
+  * Сообщение содержит важные ключевые слова, требующие реакции
+  * Это продолжение активного разговора с тобой
+- Ответь НЕТ, если:
+  * Это просто комментарий без вовлечения
+  * Прошло больше 2 минут с последнего ответа и сообщение не требует реакции
+  * Сообщение не содержит важных триггеров
+
+ВСЕГДА ИСПОЛЬЗУЙ ТОЛЬКО РУССКИЙ ЯЗЫК
+
+Верни JSON в формате:
+"summary": "обновленная сводка"
+"should_respond": true/false
+`),
+		InputVariables: []string{"current_summary", "chat_history", "username", "bot_username", "message"},
+		TemplateFormat: prompts.TemplateFormatFString,
+	}
+
+	prompt, err := template.Format(map[string]any{
+		"current_summary": currentSummary,
+		"chat_history":    s.chatHistory.format(),
+		"username":        username,
+		"bot_username":    s.cfg.Twitch.Username,
+		"message":         text,
+	})
+	if err != nil {
+		return "", false, fmt.Errorf("failed to format prompt: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, maxReasonDuration)
+	defer cancel()
+
+	result, err := chains.Run(ctx, executor, prompt)
+	if err != nil {
+		return "", false, fmt.Errorf("failed to run summary chain: %w", err)
+	}
+
+	result = strings.Trim(result, "`")
+	result = strings.TrimSpace(result)
+	result = strings.TrimPrefix(result, "json")
+	result = strings.TrimSpace(result)
+
+	var response struct {
+		Summary       string `json:"summary"`
+		ShouldRespond bool   `json:"should_respond"`
+	}
+
+	if err = json.Unmarshal([]byte(result), &response); err != nil {
+		slog.Error("Failed to parse summary agent response", "error", err)
+		return currentSummary, false, nil
+	}
+
+	return response.Summary, response.ShouldRespond, nil
+}
+
+func (s *Service) generateResponse(ctx context.Context, username, text string) (string, error) {
+	responseAgent := agents.NewOneShotAgent(
+		s.llm,
+		[]tools.Tool{},
+		agents.WithMaxIterations(maxIterations),
+	)
+
+	executor := agents.NewExecutor(
+		responseAgent,
 		agents.WithMemory(lcgmemory.NewConversationBuffer(
 			lcgmemory.WithChatHistory(lcgmemory.NewChatMessageHistory()),
 		)),
 		agents.WithMaxIterations(maxIterations),
 		agents.WithCallbacksHandler(&LogCallbackHandler{}),
 	)
+
+	s.conversation.mu.RLock()
+	conversationSummary := s.conversation.summary
+	s.conversation.mu.RUnlock()
 
 	template := prompts.PromptTemplate{
 		Template: strings.TrimSpace(`
@@ -129,21 +311,10 @@ func (s *Service) processMessage(ctx context.Context, username, text string) err
 * НИКОГДА не выходи из роли
 * НИКОГДА не говори слова или фразы, которые могут нарушить Twitch TOS, например про политику и дискриминацию
 
-Память:
-* Ты можешь использовать memory tools, чтобы запоминать информацию в графе знаний.
-* Не запоминай все подряд, только важное, интересное или смешное. Особенно мемы и повторяющиеся фразы и особенности.
-* Не запоминай историю последних сообщений, она будет предоставлена тебе в этом промпте.
-* Ты все еще можешь использовать memory tools (если нужно) даже если решил не отвечать.
-
 ВАЖНЫЕ ПРАВИЛА:
-* Постарайся отвечать на русском языке
+* ВСЕГДА ИСПОЛЬЗУЙ ТОЛЬКО РУССКИЙ ЯЗЫК
 * Старайся отвечать кратко, но с сарказмом.
-* Отвечай, только если тебя упомянули, задали вопрос или если сообщение содержит важные ключевые слова.
-* Не реагируй на каждое сообщение — будь ОЧЕНЬ избирательным.
 * Сообщения от {channel} - это результат работы Speech To Text, они могут быть не точными.
-* Учитывай контекст недавних сообщений в чате.
-* Если сообщение не требует ответа - в поле ответа пиши пустую строку.
-* USE STRICT JSON SCHEMA FOR TOOLS
 
 Некоторые примеры фраз:
 * Говорит главный в семье и живет под каблуком (про {channel})
@@ -155,24 +326,30 @@ func (s *Service) processMessage(ctx context.Context, username, text string) err
 * Лёнь, а вот на коврике на котором ты спишь вышито твое имя? или только группа крови?
 * привет стример я маленькая милая девочка без модерки, намёк понял?
 
+Контекст разговора:
+{conversation_summary}
+
 История чата:
 {chat_history}
 
 Ответь на это сообщение:
 {last_message}
+
+ВАЖНО: Если сообщение не требует ответа - верни пустую строку.
 `),
-		InputVariables: []string{"last_message", "channel", "username", "chat_history"},
+		InputVariables: []string{"last_message", "channel", "username", "chat_history", "conversation_summary"},
 		TemplateFormat: prompts.TemplateFormatFString,
 	}
 
 	chainPrompt, err := template.Format(map[string]any{
-		"last_message": fmt.Sprintf("%s: %s", username, text),
-		"channel":      s.cfg.Twitch.Channel,
-		"username":     s.cfg.Twitch.Username,
-		"chat_history": s.chatHistory.format(),
+		"last_message":         fmt.Sprintf("%s: %s", username, text),
+		"channel":              s.cfg.Twitch.Channel,
+		"username":             s.cfg.Twitch.Username,
+		"chat_history":         s.chatHistory.format(),
+		"conversation_summary": conversationSummary,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to format prompt: %w", err)
+		return "", fmt.Errorf("failed to format prompt: %w", err)
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, maxReasonDuration)
@@ -180,32 +357,10 @@ func (s *Service) processMessage(ctx context.Context, username, text string) err
 
 	response, err := chains.Run(ctx, executor, chainPrompt)
 	if err != nil {
-		return fmt.Errorf("failed to run LLM chain: %w", err)
+		return "", fmt.Errorf("failed to run LLM chain: %w", err)
 	}
 
-	response = strings.TrimSpace(response)
-	if response == "" {
-		slog.Info("no response")
-		return nil
-	}
-	if len(response) > maxMessageLength {
-		return fmt.Errorf("response is too long (%d > %d)", len(response), maxMessageLength)
-	}
-	if time.Since(lastTime) < responseCooldown {
-		return nil
-	}
-
-	if err = s.sendMessage(response); err != nil {
-		return fmt.Errorf("failed to send message: %w", err)
-	}
-
-	s.chatHistory.add(s.cfg.Twitch.Username, response)
-
-	s.mu.Lock()
-	s.lastResponse = time.Now()
-	s.mu.Unlock()
-
-	return nil
+	return strings.TrimSpace(response), nil
 }
 
 func (s *Service) sendMessage(text string) error {

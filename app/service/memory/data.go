@@ -1,43 +1,25 @@
 package memory
 
 type Entity struct {
-	Name         string   `json:"name"`
-	EntityType   string   `json:"entityType"`
-	Observations []string `json:"observations"`
-}
-
-type Relation struct {
-	From         string `json:"from"`
-	To           string `json:"to"`
-	RelationType string `json:"relationType"`
+	Name  string   `json:"name"`
+	Facts []string `json:"facts"`
 }
 
 type KnowledgeGraph struct {
-	Entities  []Entity   `json:"entities"`
-	Relations []Relation `json:"relations"`
+	Entities []*Entity `json:"entities"`
 }
 
 type jsonLineItem struct {
-	Type         string   `json:"type"`
-	Name         string   `json:"name,omitempty"`
-	EntityType   string   `json:"entityType,omitempty"`
-	Observations []string `json:"observations,omitempty"`
-	From         string   `json:"from,omitempty"`
-	To           string   `json:"to,omitempty"`
-	RelationType string   `json:"relationType,omitempty"`
+	Name  string   `json:"name,omitempty"`
+	Facts []string `json:"facts,omitempty"`
 }
 
-type AddObservationsRequest struct {
+type AddFactsRequest struct {
 	EntityName string   `json:"entityName"`
-	Contents   []string `json:"contents"`
+	Facts      []string `json:"facts"`
 }
 
-type AddObservationsResult struct {
-	EntityName        string   `json:"entityName"`
-	AddedObservations []string `json:"addedObservations"`
-}
-
-type DeleteObservationsRequest struct {
-	EntityName   string   `json:"entityName"`
-	Observations []string `json:"observations"`
+type DeleteFactsRequest struct {
+	EntityName string   `json:"entityName"`
+	Facts      []string `json:"facts"`
 }
