@@ -4,7 +4,7 @@ import (
 	"context"
 	"durkalive/app/client/twitch_live"
 	"durkalive/app/config"
-	"durkalive/app/service/agent"
+	"durkalive/app/service/conversation"
 	"durkalive/app/service/queue"
 	"durkalive/app/service/transcribe"
 	"fmt"
@@ -16,20 +16,20 @@ import (
 )
 
 type Service struct {
-	cfg           *config.Config
-	liveClient    *twitch_live.Client
-	transcribeSvc *transcribe.Service
-	agentSvc      *agent.Service
-	queueSvc      *queue.Service
+	cfg             *config.Config
+	liveClient      *twitch_live.Client
+	transcribeSvc   *transcribe.Service
+	conversationSvc *conversation.Service
+	queueSvc        *queue.Service
 }
 
 func New(di *do.Injector) (*Service, error) {
 	return &Service{
-		cfg:           do.MustInvoke[*config.Config](di),
-		liveClient:    do.MustInvoke[*twitch_live.Client](di),
-		transcribeSvc: do.MustInvoke[*transcribe.Service](di),
-		agentSvc:      do.MustInvoke[*agent.Service](di),
-		queueSvc:      do.MustInvoke[*queue.Service](di),
+		cfg:             do.MustInvoke[*config.Config](di),
+		liveClient:      do.MustInvoke[*twitch_live.Client](di),
+		transcribeSvc:   do.MustInvoke[*transcribe.Service](di),
+		conversationSvc: do.MustInvoke[*conversation.Service](di),
+		queueSvc:        do.MustInvoke[*queue.Service](di),
 	}, nil
 }
 
@@ -77,7 +77,7 @@ func (s *Service) runIteration(ctx context.Context) error {
 			}
 
 			start := time.Now()
-			if err = s.agentSvc.ProcessMessage(ctx, msg.Username, msg.Text); err != nil {
+			if err = s.conversationSvc.ProcessMessage(ctx, msg.Username, msg.Text); err != nil {
 				slog.Warn("ProcessMessage error", "error", err)
 			}
 

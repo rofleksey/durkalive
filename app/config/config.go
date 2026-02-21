@@ -17,6 +17,11 @@ type Config struct {
 }
 
 type OpenAI struct {
+	Decision ModelConfig `yaml:"decision" validate:"required"`
+	Reply    ModelConfig `yaml:"reply" validate:"required"`
+}
+
+type ModelConfig struct {
 	// OpenAI base url
 	BaseURL string `yaml:"base_url" example:"https://openrouter.ai/api/v1" validate:"required"`
 	// OpenAI token

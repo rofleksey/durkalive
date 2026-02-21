@@ -1,9 +1,8 @@
-package agent
+package conversation
 
 import (
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -16,14 +15,10 @@ type chatMessage struct {
 }
 
 type ChatHistory struct {
-	mu       sync.RWMutex
 	messages []chatMessage
 }
 
 func (h *ChatHistory) add(username, text string) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-
 	msg := chatMessage{
 		Username:  username,
 		Text:      text,
@@ -38,9 +33,6 @@ func (h *ChatHistory) add(username, text string) {
 }
 
 func (h *ChatHistory) format() string {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-
 	if len(h.messages) == 0 {
 		return "No recent messages"
 	}

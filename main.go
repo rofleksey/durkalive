@@ -7,7 +7,7 @@ import (
 	"durkalive/app/client/twitch_irc"
 	"durkalive/app/client/twitch_live"
 	"durkalive/app/config"
-	"durkalive/app/service/agent"
+	"durkalive/app/service/conversation"
 	"durkalive/app/service/engine"
 	"durkalive/app/service/memory"
 	"durkalive/app/service/queue"
@@ -48,7 +48,7 @@ func main() {
 	do.Provide(di, twitch_irc.NewClient)
 	do.Provide(di, transcribe.New)
 	do.Provide(di, memory.New)
-	do.Provide(di, agent.New)
+	do.Provide(di, conversation.New)
 	do.Provide(di, queue.New)
 	do.Provide(di, engine.New)
 
