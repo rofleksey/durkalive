@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-const messageHistorySize = 10
+const messageHistorySize = 20
 
 type chatMessage struct {
 	Username  string

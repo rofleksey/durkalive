@@ -45,28 +45,28 @@ func NewDecisionAgent(
 
 func (a *DecisionAgent) Call(ctx context.Context, username, text string) (*DecisionResponse, error) {
 	a.state.mu.RLock()
-	summary := a.state.summary
 	lastReplyTime := a.state.lastReplyTime
 	factsStr := a.memorySvc.Format()
 	historyStr := a.state.chatHistory.format()
 	a.state.mu.RUnlock()
 
 	now := time.Now()
-	minutesSinceLastReply := int(now.Sub(lastReplyTime).Minutes())
+
+	var lastReply string
 	if lastReplyTime.IsZero() {
-		minutesSinceLastReply = 9999
+		lastReply = "Ты еще не писал сообщений в чат"
+	} else {
+		lastReply = fmt.Sprintf("Ты отвечал %d секунд назад", int(now.Sub(lastReplyTime).Seconds()))
 	}
 
 	templateValues := map[string]any{
-		"last_message":             fmt.Sprintf("%s - %s: %s", formatTime(now), username, text),
-		"last_reply_time":          formatTime(lastReplyTime),
-		"minutes_since_last_reply": minutesSinceLastReply,
-		"now":                      formatTime(now),
-		"channel":                  a.cfg.Twitch.Channel,
-		"username":                 a.cfg.Twitch.Username,
-		"chat_history":             historyStr,
-		"summary":                  summary,
-		"facts":                    factsStr,
+		"last_message": fmt.Sprintf("%s - %s: %s", formatTime(now), username, text),
+		"last_reply":   lastReply,
+		"now":          formatTime(now),
+		"channel":      a.cfg.Twitch.Channel,
+		"username":     a.cfg.Twitch.Username,
+		"chat_history": historyStr,
+		"facts":        factsStr,
 	}
 
 	prompt := decisionPromptTemplate
@@ -87,8 +87,11 @@ func (a *DecisionAgent) Call(ctx context.Context, username, text string) (*Decis
 					Content: prompt,
 				},
 			},
-			MaxCompletionTokens: 10000,
-			Temperature:         0.7,
+			MaxCompletionTokens: 1000,
+			Temperature:         1,
+			ResponseFormat: &openai.ChatCompletionResponseFormat{
+				Type: openai.ChatCompletionResponseFormatTypeJSONObject,
+			},
 		},
 	)
 	if err != nil {

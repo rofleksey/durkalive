@@ -19,7 +19,6 @@ type ReplyResponse struct {
 type State struct {
 	mu sync.RWMutex
 
-	summary       string
 	chatHistory   ChatHistory
 	lastReplyTime time.Time
 }

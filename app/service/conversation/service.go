@@ -54,14 +54,16 @@ func New(di *do.Injector) (*Service, error) {
 }
 
 func (s *Service) ProcessMessage(ctx context.Context, username, text string) error {
+	defer func() {
+		s.state.mu.Lock()
+		s.state.chatHistory.add(username, text)
+		s.state.mu.Unlock()
+	}()
+
 	result, err := s.decisionAgent.Call(ctx, username, text)
 	if err != nil {
 		return fmt.Errorf("decisionAgent.Call: %w", err)
 	}
-
-	s.state.mu.Lock()
-	s.state.summary = result.NewSummary
-	s.state.mu.Unlock()
 
 	for i, value := range result.RemoveFacts {
 		result.RemoveFacts[i] = value - 1

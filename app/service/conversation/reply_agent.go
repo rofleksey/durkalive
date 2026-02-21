@@ -44,7 +44,6 @@ func NewReplyAgent(
 
 func (a *ReplyAgent) Call(ctx context.Context, username, text string) (string, error) {
 	a.state.mu.RLock()
-	summary := a.state.summary
 	factsStr := a.memorySvc.Format()
 	historyStr := a.state.chatHistory.format()
 	a.state.mu.RUnlock()
@@ -55,7 +54,6 @@ func (a *ReplyAgent) Call(ctx context.Context, username, text string) (string, e
 		"channel":      a.cfg.Twitch.Channel,
 		"username":     a.cfg.Twitch.Username,
 		"chat_history": historyStr,
-		"summary":      summary,
 		"facts":        factsStr,
 	}
 
