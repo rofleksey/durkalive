@@ -67,6 +67,10 @@ func (s *Service) runTranscription(ctx context.Context, cancel context.CancelCau
 	go func() {
 		s.ircClient.JoinChannel(s.cfg.Twitch.Channel)
 		s.ircClient.SetListener(func(channel, username, messageID, text string, tags map[string]string) {
+			if s.cfg.Twitch.IgnoreChat {
+				return
+			}
+
 			s.queue.Add(username, text)
 		})
 

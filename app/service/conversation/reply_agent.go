@@ -59,7 +59,7 @@ func (a *ReplyAgent) Call(ctx context.Context, username, text string) (string, e
 		"facts":        factsStr,
 	}
 
-	prompt := decisionPromptTemplate
+	prompt := replyPromptTemplate
 	for key, value := range templateValues {
 		prompt = strings.ReplaceAll(prompt, "{"+key+"}", fmt.Sprint(value))
 	}

@@ -6,7 +6,7 @@ import (
 	"github.com/samber/do"
 )
 
-const bufferSize = 32
+const bufferSize = 64
 
 var _ do.Shutdownable = (*Service)(nil)
 

@@ -50,6 +50,8 @@ type Twitch struct {
 	RefreshToken string `yaml:"refresh_token" example:"v1.abc123def456ghi789jkl012mno345pqr678stu901vwx234yz567" validate:"required"`
 	// Disable notifications
 	DisableNotifications bool `yaml:"disable_notifications" example:"false"`
+	// Ignore chat
+	IgnoreChat bool `yaml:"ignore_chat" example:"false"`
 }
 
 type Log struct {

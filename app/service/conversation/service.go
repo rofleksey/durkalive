@@ -75,8 +75,8 @@ func (s *Service) ProcessMessage(ctx context.Context, username, text string) err
 		return fmt.Errorf("memorySvc.AddFacts: %w", err)
 	}
 
-	if result.Confidence < minConfidence {
-		slog.Debug("Response is not required", "confidence", result.Confidence)
+	if !result.NeedResponse {
+		slog.Debug("Response is not required")
 		return nil
 	}
 

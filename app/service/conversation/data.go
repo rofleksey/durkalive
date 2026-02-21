@@ -6,10 +6,10 @@ import (
 )
 
 type DecisionResponse struct {
-	NewSummary  string   `json:"new_summary"`
-	AddFacts    []string `json:"add_facts"`
-	RemoveFacts []int    `json:"remove_facts"`
-	Confidence  float32  `json:"confidence"`
+	NewSummary   string   `json:"new_summary"`
+	AddFacts     []string `json:"add_facts"`
+	RemoveFacts  []int    `json:"remove_facts"`
+	NeedResponse bool     `json:"need_response"`
 }
 
 type ReplyResponse struct {

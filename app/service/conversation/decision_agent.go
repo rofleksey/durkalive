@@ -52,15 +52,21 @@ func (a *DecisionAgent) Call(ctx context.Context, username, text string) (*Decis
 	a.state.mu.RUnlock()
 
 	now := time.Now()
+	minutesSinceLastReply := int(now.Sub(lastReplyTime).Minutes())
+	if lastReplyTime.IsZero() {
+		minutesSinceLastReply = 9999
+	}
+
 	templateValues := map[string]any{
-		"last_message":    fmt.Sprintf("%s - %s: %s", formatTime(now), username, text),
-		"last_reply_time": formatTime(lastReplyTime),
-		"now":             formatTime(now),
-		"channel":         a.cfg.Twitch.Channel,
-		"username":        a.cfg.Twitch.Username,
-		"chat_history":    historyStr,
-		"summary":         summary,
-		"facts":           factsStr,
+		"last_message":             fmt.Sprintf("%s - %s: %s", formatTime(now), username, text),
+		"last_reply_time":          formatTime(lastReplyTime),
+		"minutes_since_last_reply": minutesSinceLastReply,
+		"now":                      formatTime(now),
+		"channel":                  a.cfg.Twitch.Channel,
+		"username":                 a.cfg.Twitch.Username,
+		"chat_history":             historyStr,
+		"summary":                  summary,
+		"facts":                    factsStr,
 	}
 
 	prompt := decisionPromptTemplate
@@ -82,7 +88,7 @@ func (a *DecisionAgent) Call(ctx context.Context, username, text string) (*Decis
 				},
 			},
 			MaxCompletionTokens: 10000,
-			Temperature:         1.3,
+			Temperature:         0.7,
 		},
 	)
 	if err != nil {
