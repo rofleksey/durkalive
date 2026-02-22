@@ -17,9 +17,10 @@ type Config struct {
 }
 
 type OpenAI struct {
-	Tagger   ModelConfig `yaml:"tagger" validate:"required"`
-	Decision ModelConfig `yaml:"decision" validate:"required"`
-	Reply    ModelConfig `yaml:"reply" validate:"required"`
+	Tagger    ModelConfig `yaml:"tagger" validate:"required"`
+	Decision  ModelConfig `yaml:"decision" validate:"required"`
+	Reply     ModelConfig `yaml:"reply" validate:"required"`
+	Embedding ModelConfig `yaml:"embedding" validate:"required"`
 }
 
 type ModelConfig struct {

@@ -7,8 +7,10 @@ require (
 	github.com/gempir/go-twitch-irc/v4 v4.3.1
 	github.com/go-playground/validator/v10 v10.30.1
 	github.com/gofiber/fiber/v2 v2.52.11
+	github.com/jackc/pgx/v5 v5.7.2
 	github.com/lib/pq v1.11.2
 	github.com/nicklaw5/helix/v2 v2.32.0
+	github.com/pgvector/pgvector-go v0.3.0
 	github.com/phsym/console-slog v0.3.1
 	github.com/samber/do v1.6.0
 	github.com/samber/oops v1.21.0
@@ -33,6 +35,9 @@ require (
 	github.com/hashicorp/errwrap v1.0.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
+	github.com/jackc/pgpassfile v1.0.0 // indirect
+	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
+	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/oklog/ulid/v2 v2.1.1 // indirect
@@ -57,7 +62,6 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260128011058-8636f8732409 // indirect
 	google.golang.org/grpc v1.78.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
-	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
 

@@ -1,34 +1,61 @@
 package memory
 
 import (
+	"context"
 	"durkalive/app/config"
 	"durkalive/app/database"
+	"durkalive/app/service/embedding"
 	"log/slog"
 	"strings"
 
 	"github.com/samber/do"
 )
 
+const similarityThreshold = 0.9
+
 type Service struct {
-	cfg *config.Config
-	db  *database.Service
+	cfg          *config.Config
+	db           *database.Service
+	embeddingSvc *embedding.Service
 }
 
 func New(di *do.Injector) (*Service, error) {
+	cfg := do.MustInvoke[*config.Config](di)
 	return &Service{
-		cfg: do.MustInvoke[*config.Config](di),
-		db:  do.MustInvoke[*database.Service](di),
+		cfg:          cfg,
+		db:           do.MustInvoke[*database.Service](di),
+		embeddingSvc: do.MustInvoke[*embedding.Service](di),
 	}, nil
 }
 
-func (s *Service) AddFact(text string, tags []string, usernames []string) {
+func (s *Service) AddFact(ctx context.Context, text string, tags []string, usernames []string) {
 	slogger := slog.With(
 		"text", text,
 		"tags", strings.Join(tags, ","),
 		"usernames", strings.Join(usernames, ","),
 	)
 
-	if _, err := s.db.AddFact(text, tags, usernames); err != nil {
+	embeddingVec, err := s.embeddingSvc.CreateEmbedding(ctx, text)
+	if err != nil {
+		slogger.Error("Failed to create embedding for fact", "error", err)
+		return
+	}
+
+	similar, err := s.db.FindSimilarFacts(ctx, embeddingVec, similarityThreshold, 1)
+	if err != nil {
+		slogger.Error("Failed to check for similar facts", "error", err)
+		return
+	}
+
+	if len(similar) > 0 {
+		slogger.Info("Skipping fact - too similar to existing fact",
+			"existing_id", similar[0].ID,
+			"existing_content", similar[0].Content,
+			"similarity", similar[0].Similarity)
+		return
+	}
+
+	if _, err = s.db.AddFact(ctx, text, tags, usernames, embeddingVec); err != nil {
 		slogger.Error("Failed to add fact", "error", err)
 		return
 	}
@@ -36,13 +63,13 @@ func (s *Service) AddFact(text string, tags []string, usernames []string) {
 	slogger.Info("Added fact")
 }
 
-func (s *Service) RemoveFacts(ids []int) {
+func (s *Service) RemoveFacts(ctx context.Context, ids []int) {
 	if len(ids) == 0 {
 		return
 	}
 
 	for _, id := range ids {
-		if err := s.db.RemoveFact(id); err != nil {
+		if err := s.db.RemoveFact(ctx, id); err != nil {
 			slog.Error("Failed to remove fact",
 				"id", id,
 				"error", err,
@@ -53,8 +80,8 @@ func (s *Service) RemoveFacts(ids []int) {
 	slog.Info("Removed facts", "ids", ids)
 }
 
-func (s *Service) Search(requiredTags, anyTags, usernames []string, limit int) []Fact {
-	facts, err := s.db.SearchFacts(requiredTags, anyTags, usernames, limit)
+func (s *Service) Search(ctx context.Context, requiredTags, anyTags, usernames []string, limit int) []Fact {
+	facts, err := s.db.SearchFacts(ctx, requiredTags, anyTags, usernames, limit)
 	if err != nil {
 		slog.Error("Failed to search facts", "error", err)
 		return nil

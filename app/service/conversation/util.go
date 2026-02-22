@@ -1,6 +1,7 @@
 package conversation
 
 import (
+	"context"
 	"durkalive/app/config"
 	"durkalive/app/service/memory"
 	"fmt"
@@ -30,8 +31,8 @@ func formatTime(t time.Time) string {
 	return t.Format("15:04:05")
 }
 
-func searchAndFormatFacts(cfg *config.Config, memorySvc *memory.Service, tags, usernames []string) string {
-	facts := memorySvc.Search([]string{}, tags, usernames, 50)
+func searchAndFormatFacts(ctx context.Context, cfg *config.Config, memorySvc *memory.Service, tags, usernames []string) string {
+	facts := memorySvc.Search(ctx, []string{}, tags, usernames, 50)
 	if len(facts) == 0 {
 		return "Нет фактов"
 	}

@@ -1,3 +1,4 @@
+// app/service/conversation/service.go
 package conversation
 
 import (
@@ -16,12 +17,12 @@ import (
 )
 
 const (
-	minConfidence     = 0.8
 	maxReasonDuration = 30 * time.Second
 	maxMessageLength  = 500
 )
 
 type Service struct {
+	appCtx       context.Context
 	cfg          *config.Config
 	twitchClient *twitch.Client
 	memorySvc    *memory.Service
@@ -45,6 +46,7 @@ func New(di *do.Injector) (*Service, error) {
 	replyAgent := NewReplyAgent(cfg, memorySvc, createClient(cfg.OpenAI.Reply), cfg.OpenAI.Reply.Model, &state)
 
 	s := &Service{
+		appCtx:        do.MustInvoke[context.Context](di),
 		cfg:           cfg,
 		twitchClient:  do.MustInvoke[*twitch.Client](di),
 		memorySvc:     memorySvc,
@@ -91,7 +93,7 @@ func (s *Service) ProcessMessage(ctx context.Context, username, text string) err
 		result.RemoveFacts[i] = value - 1
 	}
 
-	s.applyMemoryChanges(result)
+	go s.applyMemoryChanges(result)
 
 	if !result.NeedResponse {
 		slog.Debug("Response is not required")
@@ -112,14 +114,14 @@ func (s *Service) ProcessMessage(ctx context.Context, username, text string) err
 }
 
 func (s *Service) applyMemoryChanges(result *DecisionResponse) {
-	s.memorySvc.RemoveFacts(result.RemoveFacts)
+	s.memorySvc.RemoveFacts(s.appCtx, result.RemoveFacts)
 
 	for _, addReq := range result.AddFacts {
 		if len(addReq.Usernames) == 0 {
 			addReq.Usernames = []string{s.cfg.Twitch.Channel}
 		}
 
-		s.memorySvc.AddFact(addReq.Content, addReq.Tags, addReq.Usernames)
+		s.memorySvc.AddFact(s.appCtx, addReq.Content, addReq.Tags, addReq.Usernames)
 	}
 }
 

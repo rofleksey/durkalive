@@ -44,7 +44,7 @@ func NewReplyAgent(
 
 func (a *ReplyAgent) Call(ctx context.Context, username, text string, tags, usernames []string) (string, error) {
 	a.state.mu.RLock()
-	factsStr := searchAndFormatFacts(a.cfg, a.memorySvc, tags, usernames)
+	factsStr := searchAndFormatFacts(ctx, a.cfg, a.memorySvc, tags, usernames)
 	historyStr := a.state.chatHistory.format()
 	a.state.mu.RUnlock()
 
