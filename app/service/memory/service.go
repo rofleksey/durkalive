@@ -11,7 +11,7 @@ import (
 	"github.com/samber/do"
 )
 
-const similarityThreshold = 0.7
+const similarityThreshold = 0.75
 
 type Service struct {
 	cfg          *config.Config
@@ -41,17 +41,14 @@ func (s *Service) AddFact(ctx context.Context, text string, tags []string, usern
 		return
 	}
 
-	similar, err := s.db.FindSimilarFacts(ctx, embeddingVec, similarityThreshold, 1)
+	similar, err := s.db.FindSimilarFacts(ctx, usernames, embeddingVec, similarityThreshold, 1)
 	if err != nil {
 		slogger.Error("Failed to check for similar facts", "error", err)
 		return
 	}
 
 	if len(similar) > 0 {
-		slogger.Info("Skipping fact - too similar to existing fact",
-			"existing_id", similar[0].ID,
-			"existing_content", similar[0].Content,
-			"similarity", similar[0].Similarity)
+		_ = s.db.RemoveFact(ctx, similar[0].ID)
 		return
 	}
 

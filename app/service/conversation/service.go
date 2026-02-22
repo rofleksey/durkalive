@@ -96,7 +96,6 @@ func (s *Service) ProcessMessage(ctx context.Context, username, text string) err
 	go s.applyMemoryChanges(result)
 
 	if !result.NeedResponse {
-		slog.Debug("Response is not required")
 		return nil
 	}
 

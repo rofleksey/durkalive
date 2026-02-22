@@ -215,14 +215,27 @@ func (s *Service) SearchFacts(ctx context.Context, requiredTags []string, anyTag
 	return facts, nil
 }
 
-func (s *Service) FindSimilarFacts(ctx context.Context, embedding pgvector.Vector, threshold float32, limit int) ([]SimilarFact, error) {
-	rows, err := s.db.Query(ctx, `
+func (s *Service) FindSimilarFacts(ctx context.Context, usernames []string, embedding pgvector.Vector, threshold float32, limit int) ([]SimilarFact, error) {
+	query := `
 		SELECT id, content, 1 - (embedding <=> $1) AS similarity
 		FROM facts
-		WHERE embedding IS NOT NULL AND 1 - (embedding <=> $1) > $2
-		ORDER BY similarity DESC
-		LIMIT $3
-	`, embedding, threshold, limit)
+		WHERE embedding IS NOT NULL
+			AND 1 - (embedding <=> $1) > $2
+	`
+
+	args := []any{embedding, threshold}
+	paramIndex := 3
+
+	if len(usernames) > 0 {
+		query += ` AND usernames ?| $` + fmt.Sprint(paramIndex)
+		args = append(args, usernames)
+		paramIndex++
+	}
+
+	query += ` ORDER BY similarity DESC LIMIT $` + fmt.Sprint(paramIndex)
+	args = append(args, limit)
+
+	rows, err := s.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find similar facts: %w", err)
 	}
@@ -236,5 +249,10 @@ func (s *Service) FindSimilarFacts(ctx context.Context, embedding pgvector.Vecto
 		}
 		facts = append(facts, f)
 	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating rows: %w", err)
+	}
+
 	return facts, nil
 }
