@@ -11,7 +11,7 @@ import (
 	"github.com/samber/do"
 )
 
-const similarityThreshold = 0.9
+const similarityThreshold = 0.7
 
 type Service struct {
 	cfg          *config.Config
