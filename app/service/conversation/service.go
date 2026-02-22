@@ -115,6 +115,10 @@ func (s *Service) applyMemoryChanges(result *DecisionResponse) {
 	s.memorySvc.RemoveFacts(result.RemoveFacts)
 
 	for _, addReq := range result.AddFacts {
+		if len(addReq.Usernames) == 0 {
+			addReq.Usernames = []string{s.cfg.Twitch.Channel}
+		}
+
 		s.memorySvc.AddFact(addReq.Content, addReq.Tags, addReq.Usernames)
 	}
 }

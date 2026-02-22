@@ -25,6 +25,7 @@ func (s *Service) AddFact(text string, tags []string, usernames []string) {
 	slogger := slog.With(
 		"text", text,
 		"tags", strings.Join(tags, ","),
+		"usernames", strings.Join(usernames, ","),
 	)
 
 	if _, err := s.db.AddFact(text, tags, usernames); err != nil {

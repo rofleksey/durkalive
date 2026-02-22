@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	_ "modernc.org/sqlite"
 
@@ -88,7 +89,7 @@ func (s *Service) AddFact(factText string, tags []string, usernames []string) (i
 
 	result, err := s.db.Exec(`
 		INSERT INTO facts (content, tags, usernames, created_at)
-		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+		VALUES (?, ?, ?, CURRENT_TIMESTAMP)
 	`, factText, string(tagsJSON), string(usernamesJSON))
 	if err != nil {
 		return 0, fmt.Errorf("failed to insert fact: %w", err)
@@ -116,24 +117,21 @@ func (s *Service) SearchFacts(requiredTags []string, anyTags []string, usernames
 	}
 
 	query := `
-		SELECT id, content, tags, usernames, created_at
-		FROM facts
-		WHERE 1=1
-	`
+        SELECT id, content, tags, usernames, created_at
+        FROM facts
+        WHERE 1=1
+    `
 	args := []any{}
 
 	if len(usernames) > 0 {
-		placeholders := ""
+		placeholders := make([]string, len(usernames))
 		for i := range usernames {
-			if i > 0 {
-				placeholders += " OR "
-			}
-			placeholders += fmt.Sprintf("json_each.value = ?", i)
+			placeholders[i] = "?"
 		}
 		query += ` AND EXISTS (
-			SELECT 1 FROM json_each(facts.usernames)
-			WHERE ` + placeholders + `
-		)`
+            SELECT 1 FROM json_each(facts.usernames)
+            WHERE json_each.value IN (` + strings.Join(placeholders, ",") + `)
+        )`
 		for _, username := range usernames {
 			args = append(args, username)
 		}
@@ -142,25 +140,22 @@ func (s *Service) SearchFacts(requiredTags []string, anyTags []string, usernames
 	if len(requiredTags) > 0 {
 		for _, tag := range requiredTags {
 			query += ` AND EXISTS (
-				SELECT 1 FROM json_each(facts.tags)
-				WHERE json_each.value = ?
-			)`
+                SELECT 1 FROM json_each(facts.tags)
+                WHERE json_each.value = ?
+            )`
 			args = append(args, tag)
 		}
 	}
 
 	if len(anyTags) > 0 {
-		anyPlaceholders := ""
+		anyPlaceholders := make([]string, len(anyTags))
 		for i := range anyTags {
-			if i > 0 {
-				anyPlaceholders += " OR "
-			}
-			anyPlaceholders += fmt.Sprintf("json_each.value = ?", i)
+			anyPlaceholders[i] = "?"
 		}
 		query += ` AND EXISTS (
-			SELECT 1 FROM json_each(facts.tags)
-			WHERE ` + anyPlaceholders + `
-		)`
+            SELECT 1 FROM json_each(facts.tags)
+            WHERE json_each.value IN (` + strings.Join(anyPlaceholders, ",") + `)
+        )`
 		for _, tag := range anyTags {
 			args = append(args, tag)
 		}

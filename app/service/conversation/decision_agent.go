@@ -53,6 +53,7 @@ func (a *DecisionAgent) Call(ctx context.Context, username, text string, tags, u
 
 	slog.Debug("Facts debug",
 		"tags", tags,
+		"usernames", usernames,
 		"factsStr", factsStr,
 	)
 
