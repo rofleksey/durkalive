@@ -45,6 +45,10 @@ func (h *Handle) SendConfig() error {
 				RestrictionType: stt.LanguageRestrictionOptions_WHITELIST,
 				LanguageCode:    []string{"ru-RU"},
 			},
+			TextNormalization: &stt.TextNormalizationOptions{
+				TextNormalization: stt.TextNormalizationOptions_TEXT_NORMALIZATION_ENABLED,
+				LiteratureText:    true,
+			},
 		},
 		EouClassifier: &eouClassifier,
 	})
@@ -58,7 +62,12 @@ func (h *Handle) Recv() ([]string, error) {
 		return nil, fmt.Errorf("failed to receive stt: %w", err)
 	}
 
-	finalEvent := res.GetFinal()
+	finalRefinement := res.GetFinalRefinement()
+	if finalRefinement == nil {
+		return nil, nil
+	}
+
+	finalEvent := finalRefinement.GetNormalizedText()
 	if finalEvent == nil {
 		return nil, nil
 	}
