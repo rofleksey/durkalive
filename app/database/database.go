@@ -76,11 +76,7 @@ func (s *Service) SaveBotConfig(data any) error {
 	return nil
 }
 
-func (s *Service) AddFact(factText string, tags []string, relevance int) (int64, error) {
-	if relevance < 1 || relevance > 100 {
-		return 0, fmt.Errorf("invalid relevance value: %d", relevance)
-	}
-
+func (s *Service) AddFact(factText string, tags []string) (int64, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return 0, fmt.Errorf("failed to begin transaction: %w", err)
@@ -88,9 +84,9 @@ func (s *Service) AddFact(factText string, tags []string, relevance int) (int64,
 	defer tx.Rollback()
 
 	result, err := tx.Exec(`
-		INSERT INTO facts (content, created_at, relevance)
-		VALUES (?, CURRENT_TIMESTAMP, ?)
-	`, factText, relevance)
+		INSERT INTO facts (content, created_at)
+		VALUES (?, CURRENT_TIMESTAMP)
+	`, factText)
 	if err != nil {
 		return 0, fmt.Errorf("failed to insert fact: %w", err)
 	}
@@ -125,26 +121,13 @@ func (s *Service) RemoveFact(factID int) error {
 	return nil
 }
 
-func (s *Service) UpdateFactRelevance(factID int, relevance int) error {
-	if relevance < 1 || relevance > 100 {
-		return fmt.Errorf("relevance must be between 1 and 100")
-	}
-	_, err := s.db.Exec(`
-		UPDATE facts SET relevance = ? WHERE id = ?
-	`, relevance, factID)
-	if err != nil {
-		return fmt.Errorf("failed to update fact relevance: %w", err)
-	}
-	return nil
-}
-
 func (s *Service) SearchFacts(requiredTags []string, anyTags []string, limit int) ([]Fact, error) {
 	if limit <= 0 {
 		return nil, fmt.Errorf("limit must be positive")
 	}
 
 	query := `
-		SELECT DISTINCT f.id, f.content, f.relevance
+		SELECT DISTINCT f.id, f.content
 		FROM facts f
 		WHERE 1=1
 	`
@@ -173,7 +156,7 @@ func (s *Service) SearchFacts(requiredTags []string, anyTags []string, limit int
 		}
 	}
 
-	query += ` ORDER BY f.relevance DESC LIMIT ?`
+	query += ` ORDER BY RANDOM() LIMIT ?`
 	args = append(args, limit)
 
 	rows, err := s.db.Query(query, args...)
@@ -185,7 +168,7 @@ func (s *Service) SearchFacts(requiredTags []string, anyTags []string, limit int
 	var facts []Fact
 	for rows.Next() {
 		var f Fact
-		if err := rows.Scan(&f.ID, &f.Content, &f.Relevance); err != nil {
+		if err := rows.Scan(&f.ID, &f.Content); err != nil {
 			return nil, fmt.Errorf("failed to scan fact: %w", err)
 		}
 

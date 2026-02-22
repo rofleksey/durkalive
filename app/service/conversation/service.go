@@ -64,21 +64,25 @@ func (s *Service) ProcessMessage(ctx context.Context, username, text string) err
 		s.state.mu.Unlock()
 	}()
 
-	s.state.mu.RLock()
-	additionalTags := make(map[string]struct{})
-	for _, msg := range s.state.chatHistory.messages {
-		additionalTags["user__"+msg.Username] = struct{}{}
-	}
-	s.state.mu.RUnlock()
-
 	tags, err := s.taggerAgent.Call(ctx, username, text)
 	if err != nil {
 		return fmt.Errorf("taggerAgent.Call: %w", err)
 	}
 
+	s.state.mu.RLock()
+	additionalTags := make(map[string]struct{})
+	for _, msg := range s.state.chatHistory.messages {
+		if msg.Username == s.cfg.Twitch.Channel || msg.Username == s.cfg.Twitch.Username {
+			continue
+		}
+		additionalTags["user__"+msg.Username] = struct{}{}
+	}
+	s.state.mu.RUnlock()
+
 	for newTag := range additionalTags {
 		tags = append(tags, newTag)
 	}
+	tags = append(tags, "user__"+username)
 
 	result, err := s.decisionAgent.Call(ctx, username, text, tags)
 	if err != nil {
@@ -110,14 +114,13 @@ func (s *Service) ProcessMessage(ctx context.Context, username, text string) err
 }
 
 func (s *Service) applyMemoryChanges(result *DecisionResponse) {
-	for _, updateReq := range result.UpdateRelevance {
-		s.memorySvc.UpdateFactRelevance(updateReq.ID, updateReq.Relevance)
-	}
-
 	s.memorySvc.RemoveFacts(result.RemoveFacts)
 
 	for _, addReq := range result.AddFacts {
-		s.memorySvc.AddFact(addReq.Content, addReq.Tags, addReq.Relevance)
+		newFacts := []string{"streamer__" + s.cfg.Twitch.Channel}
+		newFacts = append(newFacts, addReq.Tags...)
+
+		s.memorySvc.AddFact(addReq.Content, newFacts)
 	}
 }
 

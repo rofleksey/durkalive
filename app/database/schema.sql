@@ -8,8 +8,7 @@ CREATE TABLE IF NOT EXISTS facts
 (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   content     TEXT NOT NULL,
-  created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
-  relevance   INTEGER  DEFAULT 50 CHECK (relevance BETWEEN 1 AND 100)
+  created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS fact_tags
@@ -21,4 +20,3 @@ CREATE TABLE IF NOT EXISTS fact_tags
 );
 
 CREATE INDEX IF NOT EXISTS idx_fact_tags_tag ON fact_tags (tag);
-CREATE INDEX IF NOT EXISTS idx_facts_relevance ON facts (relevance DESC);

@@ -21,34 +21,18 @@ func New(di *do.Injector) (*Service, error) {
 	}, nil
 }
 
-func (s *Service) AddFact(text string, tags []string, relevance int) {
+func (s *Service) AddFact(text string, tags []string) {
 	slogger := slog.With(
 		"text", text,
 		"tags", strings.Join(tags, ","),
-		"relevance", relevance,
 	)
 
-	if _, err := s.db.AddFact(text, tags, relevance); err != nil {
+	if _, err := s.db.AddFact(text, tags); err != nil {
 		slogger.Error("Failed to add fact", "error", err)
 		return
 	}
 
 	slogger.Info("Added fact")
-}
-
-func (s *Service) UpdateFactRelevance(id int, relevance int) {
-	if err := s.db.UpdateFactRelevance(id, relevance); err != nil {
-		slog.Error("Failed to update fact relevance",
-			"id", id,
-			"error", err,
-		)
-		return
-	}
-
-	slog.Info("Updated fact relevance",
-		"id", id,
-		"relevance", relevance,
-	)
 }
 
 func (s *Service) RemoveFacts(ids []int) {
@@ -78,9 +62,8 @@ func (s *Service) Search(requiredTags []string, anyTags []string, limit int) []F
 	result := make([]Fact, 0, len(facts))
 	for _, fact := range facts {
 		result = append(result, Fact{
-			ID:        fact.ID,
-			Content:   fact.Content,
-			Relevance: fact.Relevance,
+			ID:      fact.ID,
+			Content: fact.Content,
 		})
 	}
 

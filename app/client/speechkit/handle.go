@@ -33,7 +33,7 @@ func (h *Handle) SendConfig() error {
 	var eouClassifier stt.EouClassifierOptions
 	eouClassifier.SetDefaultClassifier(&stt.DefaultEouClassifier{
 		Type:                       stt.DefaultEouClassifier_HIGH,
-		MaxPauseBetweenWordsHintMs: 500,
+		MaxPauseBetweenWordsHintMs: 1000,
 	})
 
 	var req stt.StreamingRequest

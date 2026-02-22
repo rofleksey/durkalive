@@ -31,7 +31,7 @@ func formatTime(t time.Time) string {
 }
 
 func searchAndFormatFacts(cfg *config.Config, memorySvc *memory.Service, tags []string) string {
-	facts := memorySvc.Search([]string{cfg.Twitch.Channel}, tags, 50)
+	facts := memorySvc.Search([]string{"streamer__" + cfg.Twitch.Channel}, tags, 50)
 	if len(facts) == 0 {
 		return "Нет фактов"
 	}
@@ -42,8 +42,6 @@ func searchAndFormatFacts(cfg *config.Config, memorySvc *memory.Service, tags []
 		builder.WriteString(fmt.Sprint(fact.ID))
 		builder.WriteString(", content=")
 		builder.WriteString(fact.Content)
-		builder.WriteString(", relevance=")
-		builder.WriteString(fmt.Sprint(fact.Relevance))
 		builder.WriteString("\n")
 	}
 

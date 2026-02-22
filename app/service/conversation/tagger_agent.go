@@ -83,6 +83,9 @@ func (a *TaggerAgent) Call(ctx context.Context, username, text string) ([]string
 
 	result := aiResponse.Choices[0].Message.Content
 	result = strings.TrimSpace(result)
+	if result == "" {
+		return nil, nil
+	}
 
 	return strings.Split(result, ","), nil
 }
