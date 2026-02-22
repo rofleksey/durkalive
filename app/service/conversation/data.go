@@ -6,14 +6,21 @@ import (
 )
 
 type DecisionResponse struct {
-	NewSummary   string   `json:"new_summary"`
-	AddFacts     []string `json:"add_facts"`
-	RemoveFacts  []int    `json:"remove_facts"`
-	NeedResponse bool     `json:"need_response"`
+	AddFacts        []AddFactRequest         `json:"add_facts"`
+	RemoveFacts     []int                    `json:"remove_facts"`
+	UpdateRelevance []UpdateRelevanceRequest `json:"update_relevance"`
+	NeedResponse    bool                     `json:"need_response"`
 }
 
-type ReplyResponse struct {
-	Response string `json:"response"`
+type AddFactRequest struct {
+	Content   string   `json:"content"`
+	Tags      []string `json:"tags"`
+	Relevance int      `json:"relevance"`
+}
+
+type UpdateRelevanceRequest struct {
+	ID        int `json:"id"`
+	Relevance int `json:"relevance"`
 }
 
 type State struct {

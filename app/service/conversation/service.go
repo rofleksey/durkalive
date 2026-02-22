@@ -26,6 +26,7 @@ type Service struct {
 	twitchClient *twitch.Client
 	memorySvc    *memory.Service
 
+	taggerAgent   *TaggerAgent
 	decisionAgent *DecisionAgent
 	replyAgent    *ReplyAgent
 	state         *State
@@ -37,6 +38,8 @@ func New(di *do.Injector) (*Service, error) {
 
 	var state State
 
+	taggerAgent := NewTaggerAgent(cfg, createClient(cfg.OpenAI.Tagger), cfg.OpenAI.Tagger.Model,
+		&state)
 	decisionAgent := NewDecisionAgent(cfg, memorySvc, createClient(cfg.OpenAI.Decision), cfg.OpenAI.Decision.Model,
 		&state)
 	replyAgent := NewReplyAgent(cfg, memorySvc, createClient(cfg.OpenAI.Reply), cfg.OpenAI.Reply.Model, &state)
@@ -45,6 +48,7 @@ func New(di *do.Injector) (*Service, error) {
 		cfg:           cfg,
 		twitchClient:  do.MustInvoke[*twitch.Client](di),
 		memorySvc:     memorySvc,
+		taggerAgent:   taggerAgent,
 		decisionAgent: decisionAgent,
 		replyAgent:    replyAgent,
 		state:         &state,
@@ -60,7 +64,23 @@ func (s *Service) ProcessMessage(ctx context.Context, username, text string) err
 		s.state.mu.Unlock()
 	}()
 
-	result, err := s.decisionAgent.Call(ctx, username, text)
+	s.state.mu.RLock()
+	additionalTags := make(map[string]struct{})
+	for _, msg := range s.state.chatHistory.messages {
+		additionalTags["user__"+msg.Username] = struct{}{}
+	}
+	s.state.mu.RUnlock()
+
+	tags, err := s.taggerAgent.Call(ctx, username, text)
+	if err != nil {
+		return fmt.Errorf("taggerAgent.Call: %w", err)
+	}
+
+	for newTag := range additionalTags {
+		tags = append(tags, newTag)
+	}
+
+	result, err := s.decisionAgent.Call(ctx, username, text, tags)
 	if err != nil {
 		return fmt.Errorf("decisionAgent.Call: %w", err)
 	}
@@ -69,13 +89,7 @@ func (s *Service) ProcessMessage(ctx context.Context, username, text string) err
 		result.RemoveFacts[i] = value - 1
 	}
 
-	if err = s.memorySvc.RemoveFacts(result.RemoveFacts); err != nil {
-		return fmt.Errorf("memorySvc.RemoveFacts: %w", err)
-	}
-
-	if err = s.memorySvc.AddFacts(result.AddFacts); err != nil {
-		return fmt.Errorf("memorySvc.AddFacts: %w", err)
-	}
+	s.applyMemoryChanges(result)
 
 	if !result.NeedResponse {
 		slog.Debug("Response is not required")
@@ -83,7 +97,7 @@ func (s *Service) ProcessMessage(ctx context.Context, username, text string) err
 	}
 
 	go func() {
-		if err := s.generateReply(ctx, username, text); err != nil {
+		if err := s.generateReply(ctx, username, text, tags); err != nil {
 			slog.Error("Failed to generate reply",
 				"username", username,
 				"text", text,
@@ -95,8 +109,20 @@ func (s *Service) ProcessMessage(ctx context.Context, username, text string) err
 	return nil
 }
 
-func (s *Service) generateReply(ctx context.Context, username, text string) error {
-	replyText, err := s.replyAgent.Call(ctx, username, text)
+func (s *Service) applyMemoryChanges(result *DecisionResponse) {
+	for _, updateReq := range result.UpdateRelevance {
+		s.memorySvc.UpdateFactRelevance(updateReq.ID, updateReq.Relevance)
+	}
+
+	s.memorySvc.RemoveFacts(result.RemoveFacts)
+
+	for _, addReq := range result.AddFacts {
+		s.memorySvc.AddFact(addReq.Content, addReq.Tags, addReq.Relevance)
+	}
+}
+
+func (s *Service) generateReply(ctx context.Context, username, text string, tags []string) error {
+	replyText, err := s.replyAgent.Call(ctx, username, text, tags)
 	if err != nil {
 		return fmt.Errorf("replyAgent.Call: %w", err)
 	}

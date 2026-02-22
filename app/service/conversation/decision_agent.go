@@ -43,10 +43,10 @@ func NewDecisionAgent(
 	}
 }
 
-func (a *DecisionAgent) Call(ctx context.Context, username, text string) (*DecisionResponse, error) {
+func (a *DecisionAgent) Call(ctx context.Context, username, text string, tags []string) (*DecisionResponse, error) {
 	a.state.mu.RLock()
 	lastReplyTime := a.state.lastReplyTime
-	factsStr := a.memorySvc.Format()
+	factsStr := searchAndFormatFacts(a.cfg, a.memorySvc, tags)
 	historyStr := a.state.chatHistory.format()
 	a.state.mu.RUnlock()
 

@@ -2,7 +2,10 @@ package conversation
 
 import (
 	"durkalive/app/config"
+	"durkalive/app/service/memory"
+	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/sashabaranov/go-openai"
@@ -25,4 +28,24 @@ func formatTime(t time.Time) string {
 	}
 
 	return t.Format("15:04:05")
+}
+
+func searchAndFormatFacts(cfg *config.Config, memorySvc *memory.Service, tags []string) string {
+	facts := memorySvc.Search([]string{cfg.Twitch.Channel}, tags, 50)
+	if len(facts) == 0 {
+		return "Нет фактов"
+	}
+
+	var builder strings.Builder
+	for _, fact := range facts {
+		builder.WriteString("id=")
+		builder.WriteString(fmt.Sprint(fact.ID))
+		builder.WriteString(", content=")
+		builder.WriteString(fact.Content)
+		builder.WriteString(", relevance=")
+		builder.WriteString(fmt.Sprint(fact.Relevance))
+		builder.WriteString("\n")
+	}
+
+	return builder.String()
 }
