@@ -70,21 +70,19 @@ func (s *Service) ProcessMessage(ctx context.Context, username, text string) err
 	}
 
 	s.state.mu.RLock()
-	additionalTags := make(map[string]struct{})
+	usernameMap := make(map[string]struct{})
 	for _, msg := range s.state.chatHistory.messages {
-		if msg.Username == s.cfg.Twitch.Channel || msg.Username == s.cfg.Twitch.Username {
-			continue
-		}
-		additionalTags["user__"+msg.Username] = struct{}{}
+		usernameMap[msg.Username] = struct{}{}
 	}
+	usernameMap[username] = struct{}{}
 	s.state.mu.RUnlock()
 
-	for newTag := range additionalTags {
-		tags = append(tags, newTag)
+	usernames := make([]string, 0, len(usernameMap))
+	for curUsername := range usernameMap {
+		usernames = append(usernames, curUsername)
 	}
-	tags = append(tags, "user__"+username)
 
-	result, err := s.decisionAgent.Call(ctx, username, text, tags)
+	result, err := s.decisionAgent.Call(ctx, username, text, tags, usernames)
 	if err != nil {
 		return fmt.Errorf("decisionAgent.Call: %w", err)
 	}
@@ -101,7 +99,7 @@ func (s *Service) ProcessMessage(ctx context.Context, username, text string) err
 	}
 
 	go func() {
-		if err := s.generateReply(ctx, username, text, tags); err != nil {
+		if err := s.generateReply(ctx, username, text, tags, usernames); err != nil {
 			slog.Error("Failed to generate reply",
 				"username", username,
 				"text", text,
@@ -117,15 +115,12 @@ func (s *Service) applyMemoryChanges(result *DecisionResponse) {
 	s.memorySvc.RemoveFacts(result.RemoveFacts)
 
 	for _, addReq := range result.AddFacts {
-		newFacts := []string{"streamer__" + s.cfg.Twitch.Channel}
-		newFacts = append(newFacts, addReq.Tags...)
-
-		s.memorySvc.AddFact(addReq.Content, newFacts)
+		s.memorySvc.AddFact(addReq.Content, addReq.Tags, addReq.Usernames)
 	}
 }
 
-func (s *Service) generateReply(ctx context.Context, username, text string, tags []string) error {
-	replyText, err := s.replyAgent.Call(ctx, username, text, tags)
+func (s *Service) generateReply(ctx context.Context, username, text string, tags, usernames []string) error {
+	replyText, err := s.replyAgent.Call(ctx, username, text, tags, usernames)
 	if err != nil {
 		return fmt.Errorf("replyAgent.Call: %w", err)
 	}

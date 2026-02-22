@@ -30,8 +30,8 @@ func formatTime(t time.Time) string {
 	return t.Format("15:04:05")
 }
 
-func searchAndFormatFacts(cfg *config.Config, memorySvc *memory.Service, tags []string) string {
-	facts := memorySvc.Search([]string{"streamer__" + cfg.Twitch.Channel}, tags, 50)
+func searchAndFormatFacts(cfg *config.Config, memorySvc *memory.Service, tags, usernames []string) string {
+	facts := memorySvc.Search([]string{}, tags, usernames, 50)
 	if len(facts) == 0 {
 		return "Нет фактов"
 	}

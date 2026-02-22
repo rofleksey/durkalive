@@ -12,8 +12,9 @@ type DecisionResponse struct {
 }
 
 type AddFactRequest struct {
-	Content string   `json:"content"`
-	Tags    []string `json:"tags"`
+	Content   string   `json:"content"`
+	Tags      []string `json:"tags"`
+	Usernames []string `json:"usernames"`
 }
 
 type State struct {

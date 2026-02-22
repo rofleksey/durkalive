@@ -8,15 +8,7 @@ CREATE TABLE IF NOT EXISTS facts
 (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   content     TEXT NOT NULL,
+  tags        TEXT NOT NULL DEFAULT '[]',
+  usernames   TEXT NOT NULL DEFAULT '[]',
   created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
 );
-
-CREATE TABLE IF NOT EXISTS fact_tags
-(
-  fact_id INTEGER NOT NULL,
-  tag     TEXT    NOT NULL,
-  FOREIGN KEY (fact_id) REFERENCES facts (id) ON DELETE CASCADE,
-  PRIMARY KEY (fact_id, tag)
-);
-
-CREATE INDEX IF NOT EXISTS idx_fact_tags_tag ON fact_tags (tag);

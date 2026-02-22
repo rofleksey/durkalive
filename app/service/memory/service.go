@@ -21,13 +21,13 @@ func New(di *do.Injector) (*Service, error) {
 	}, nil
 }
 
-func (s *Service) AddFact(text string, tags []string) {
+func (s *Service) AddFact(text string, tags []string, usernames []string) {
 	slogger := slog.With(
 		"text", text,
 		"tags", strings.Join(tags, ","),
 	)
 
-	if _, err := s.db.AddFact(text, tags); err != nil {
+	if _, err := s.db.AddFact(text, tags, usernames); err != nil {
 		slogger.Error("Failed to add fact", "error", err)
 		return
 	}
@@ -52,8 +52,8 @@ func (s *Service) RemoveFacts(ids []int) {
 	slog.Info("Removed facts", "ids", ids)
 }
 
-func (s *Service) Search(requiredTags []string, anyTags []string, limit int) []Fact {
-	facts, err := s.db.SearchFacts(requiredTags, anyTags, limit)
+func (s *Service) Search(requiredTags, anyTags, usernames []string, limit int) []Fact {
+	facts, err := s.db.SearchFacts(requiredTags, anyTags, usernames, limit)
 	if err != nil {
 		slog.Error("Failed to search facts", "error", err)
 		return nil
