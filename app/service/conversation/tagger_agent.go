@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/samber/do"
 	"github.com/sashabaranov/go-openai"
 )
 
@@ -24,13 +25,13 @@ type TaggerAgent struct {
 }
 
 func NewTaggerAgent(
-	cfg *config.Config,
+	di *do.Injector,
 	client *openai.Client,
 	model string,
 	state *State,
 ) *TaggerAgent {
 	return &TaggerAgent{
-		cfg:    cfg,
+		cfg:    do.MustInvoke[*config.Config](di),
 		client: client,
 		model:  model,
 		state:  state,

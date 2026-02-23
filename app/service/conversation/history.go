@@ -32,14 +32,25 @@ func (h *ChatHistory) add(username, text string) {
 	}
 }
 
-func (h *ChatHistory) format() string {
+func (h *ChatHistory) format(limit ...int) string {
 	if len(h.messages) == 0 {
 		return "No recent messages"
 	}
 
+	messagesToShow := len(h.messages)
+	if len(limit) > 0 && limit[0] > 0 && limit[0] < messagesToShow {
+		messagesToShow = limit[0]
+	}
+
 	var builder strings.Builder
 
-	for _, msg := range h.messages {
+	startIdx := len(h.messages) - messagesToShow
+	if startIdx < 0 {
+		startIdx = 0
+	}
+
+	for i := startIdx; i < len(h.messages); i++ {
+		msg := h.messages[i]
 		builder.WriteString(fmt.Sprintf("%s - %s: %s\n", formatTime(msg.Timestamp), msg.Username, msg.Text))
 	}
 

@@ -35,21 +35,20 @@ type Service struct {
 
 func New(di *do.Injector) (*Service, error) {
 	cfg := do.MustInvoke[*config.Config](di)
-	memorySvc := do.MustInvoke[*memory.Service](di)
 
 	var state State
 
-	taggerAgent := NewTaggerAgent(cfg, createClient(cfg.OpenAI.Tagger), cfg.OpenAI.Tagger.Model,
+	taggerAgent := NewTaggerAgent(di, createClient(cfg.OpenAI.Tagger), cfg.OpenAI.Tagger.Model,
 		&state)
-	decisionAgent := NewDecisionAgent(cfg, memorySvc, createClient(cfg.OpenAI.Decision), cfg.OpenAI.Decision.Model,
+	decisionAgent := NewDecisionAgent(di, createClient(cfg.OpenAI.Decision), cfg.OpenAI.Decision.Model,
 		&state)
-	replyAgent := NewReplyAgent(cfg, memorySvc, createClient(cfg.OpenAI.Reply), cfg.OpenAI.Reply.Model, &state)
+	replyAgent := NewReplyAgent(di, createClient(cfg.OpenAI.Reply), cfg.OpenAI.Reply.Model, &state)
 
 	s := &Service{
 		appCtx:        do.MustInvoke[context.Context](di),
 		cfg:           cfg,
 		twitchClient:  do.MustInvoke[*twitch.Client](di),
-		memorySvc:     memorySvc,
+		memorySvc:     do.MustInvoke[*memory.Service](di),
 		taggerAgent:   taggerAgent,
 		decisionAgent: decisionAgent,
 		replyAgent:    replyAgent,

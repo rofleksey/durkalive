@@ -3,6 +3,8 @@ package conversation
 import (
 	"context"
 	"durkalive/app/config"
+	"durkalive/app/database"
+	"durkalive/app/service/embedding"
 	"durkalive/app/service/memory"
 	"encoding/json"
 	"fmt"
@@ -12,6 +14,7 @@ import (
 
 	_ "embed"
 
+	"github.com/samber/do"
 	"github.com/sashabaranov/go-openai"
 )
 
@@ -19,8 +22,10 @@ import (
 var decisionPromptTemplate string
 
 type DecisionAgent struct {
-	cfg       *config.Config
-	memorySvc *memory.Service
+	cfg          *config.Config
+	db           *database.Service
+	memorySvc    *memory.Service
+	embeddingSvc *embedding.Service
 
 	client *openai.Client
 	model  string
@@ -29,32 +34,39 @@ type DecisionAgent struct {
 }
 
 func NewDecisionAgent(
-	cfg *config.Config,
-	memorySvc *memory.Service,
+	di *do.Injector,
 	client *openai.Client,
 	model string,
 	state *State,
 ) *DecisionAgent {
 	return &DecisionAgent{
-		cfg:       cfg,
-		memorySvc: memorySvc,
-		client:    client,
-		model:     model,
-		state:     state,
+		cfg:          do.MustInvoke[*config.Config](di),
+		db:           do.MustInvoke[*database.Service](di),
+		memorySvc:    do.MustInvoke[*memory.Service](di),
+		embeddingSvc: do.MustInvoke[*embedding.Service](di),
+		client:       client,
+		model:        model,
+		state:        state,
 	}
 }
 
 func (a *DecisionAgent) Call(ctx context.Context, username, text string, tags, usernames []string) (*DecisionResponse, error) {
 	a.state.mu.RLock()
 	lastReplyTime := a.state.lastReplyTime
-	factsStr := searchAndFormatFacts(ctx, a.cfg, a.memorySvc, tags, usernames)
+	randomFactsStr := formatRandomFactsByTags(ctx, a.memorySvc, tags, usernames)
+	similarFactsStr, err := formatFactsByChatHistory(ctx, a.db, a.embeddingSvc, a.state, usernames)
+	if err != nil {
+		a.state.mu.RUnlock()
+		return nil, fmt.Errorf("failed to format similar facts: %w", err)
+	}
 	historyStr := a.state.chatHistory.format()
 	a.state.mu.RUnlock()
 
 	slog.Debug("Facts debug",
 		"tags", tags,
 		"usernames", usernames,
-		"factsStr", factsStr,
+		"random_facts", randomFactsStr,
+		"similar_facts", similarFactsStr,
 	)
 
 	now := time.Now()
@@ -67,13 +79,14 @@ func (a *DecisionAgent) Call(ctx context.Context, username, text string, tags, u
 	}
 
 	templateValues := map[string]any{
-		"last_message": fmt.Sprintf("%s - %s: %s", formatTime(now), username, text),
-		"last_reply":   lastReply,
-		"now":          formatTime(now),
-		"channel":      a.cfg.Twitch.Channel,
-		"username":     a.cfg.Twitch.Username,
-		"chat_history": historyStr,
-		"facts":        factsStr,
+		"last_message":  fmt.Sprintf("%s - %s: %s", formatTime(now), username, text),
+		"last_reply":    lastReply,
+		"now":           formatTime(now),
+		"channel":       a.cfg.Twitch.Channel,
+		"username":      a.cfg.Twitch.Username,
+		"chat_history":  historyStr,
+		"random_facts":  randomFactsStr,
+		"similar_facts": similarFactsStr,
 	}
 
 	prompt := decisionPromptTemplate

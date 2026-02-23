@@ -29,7 +29,7 @@ func NewFFmpegStream(ctx context.Context, m3u8URL string) (*FFmpegStream, error)
 		"-vn",
 		"-acodec", "pcm_s16le",
 		"-ac", "1",
-		"-ar", "16000",
+		"-ar", "48000",
 		"-f", "wav",
 		"-",
 	}

@@ -219,8 +219,7 @@ func (s *Service) FindSimilarFacts(ctx context.Context, usernames []string, embe
 	query := `
 		SELECT id, content, 1 - (embedding <=> $1) AS similarity
 		FROM facts
-		WHERE embedding IS NOT NULL
-			AND 1 - (embedding <=> $1) > $2
+		WHERE 1 - (embedding <=> $1) > $2
 	`
 
 	args := []any{embedding, threshold}

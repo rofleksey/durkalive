@@ -26,7 +26,7 @@ func (h *Handle) SendConfig() error {
 	var audioFormatOpts stt.AudioFormatOptions
 	audioFormatOpts.SetRawAudio(&stt.RawAudio{
 		AudioEncoding:     stt.RawAudio_LINEAR16_PCM,
-		SampleRateHertz:   16000,
+		SampleRateHertz:   48000,
 		AudioChannelCount: 1,
 	})
 

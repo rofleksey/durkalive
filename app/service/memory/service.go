@@ -11,7 +11,7 @@ import (
 	"github.com/samber/do"
 )
 
-const similarityThreshold = 0.75
+const similarityThreshold = 0.77
 
 type Service struct {
 	cfg          *config.Config
@@ -49,7 +49,6 @@ func (s *Service) AddFact(ctx context.Context, text string, tags []string, usern
 
 	if len(similar) > 0 {
 		_ = s.db.RemoveFact(ctx, similar[0].ID)
-		return
 	}
 
 	if _, err = s.db.AddFact(ctx, text, tags, usernames, embeddingVec); err != nil {

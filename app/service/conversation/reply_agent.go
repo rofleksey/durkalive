@@ -3,6 +3,8 @@ package conversation
 import (
 	"context"
 	"durkalive/app/config"
+	"durkalive/app/database"
+	"durkalive/app/service/embedding"
 	"durkalive/app/service/memory"
 	"fmt"
 	"strings"
@@ -10,6 +12,7 @@ import (
 
 	_ "embed"
 
+	"github.com/samber/do"
 	"github.com/sashabaranov/go-openai"
 )
 
@@ -17,8 +20,10 @@ import (
 var replyPromptTemplate string
 
 type ReplyAgent struct {
-	cfg       *config.Config
-	memorySvc *memory.Service
+	cfg          *config.Config
+	db           *database.Service
+	embeddingSvc *embedding.Service
+	memorySvc    *memory.Service
 
 	client *openai.Client
 	model  string
@@ -27,34 +32,41 @@ type ReplyAgent struct {
 }
 
 func NewReplyAgent(
-	cfg *config.Config,
-	memorySvc *memory.Service,
+	di *do.Injector,
 	client *openai.Client,
 	model string,
 	state *State,
 ) *ReplyAgent {
 	return &ReplyAgent{
-		cfg:       cfg,
-		memorySvc: memorySvc,
-		client:    client,
-		model:     model,
-		state:     state,
+		cfg:          do.MustInvoke[*config.Config](di),
+		memorySvc:    do.MustInvoke[*memory.Service](di),
+		db:           do.MustInvoke[*database.Service](di),
+		embeddingSvc: do.MustInvoke[*embedding.Service](di),
+		client:       client,
+		model:        model,
+		state:        state,
 	}
 }
 
 func (a *ReplyAgent) Call(ctx context.Context, username, text string, tags, usernames []string) (string, error) {
 	a.state.mu.RLock()
-	factsStr := searchAndFormatFacts(ctx, a.cfg, a.memorySvc, tags, usernames)
+	randomFactsStr := formatRandomFactsByTags(ctx, a.memorySvc, tags, usernames)
+	similarFactsStr, err := formatFactsByChatHistory(ctx, a.db, a.embeddingSvc, a.state, usernames)
+	if err != nil {
+		a.state.mu.RUnlock()
+		return "", fmt.Errorf("failed to format similar facts: %w", err)
+	}
 	historyStr := a.state.chatHistory.format()
 	a.state.mu.RUnlock()
 
 	now := time.Now()
 	templateValues := map[string]any{
-		"last_message": fmt.Sprintf("%s - %s: %s", formatTime(now), username, text),
-		"channel":      a.cfg.Twitch.Channel,
-		"username":     a.cfg.Twitch.Username,
-		"chat_history": historyStr,
-		"facts":        factsStr,
+		"last_message":  fmt.Sprintf("%s - %s: %s", formatTime(now), username, text),
+		"channel":       a.cfg.Twitch.Channel,
+		"username":      a.cfg.Twitch.Username,
+		"chat_history":  historyStr,
+		"random_facts":  randomFactsStr,
+		"similar_facts": similarFactsStr,
 	}
 
 	prompt := replyPromptTemplate
