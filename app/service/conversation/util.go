@@ -60,7 +60,7 @@ func formatRandomFactsByTags(ctx context.Context, memorySvc *memory.Service, tag
 func formatFactsByChatHistory(ctx context.Context, db *database.Service, embeddingSvc *embedding.Service,
 	state *State, usernames []string) (string, error) {
 
-	msgHistoryText := state.chatHistory.format(similarFactsEmbeddingHistoryLength)
+	msgHistoryText := state.chatHistory.formatEmbedding(similarFactsEmbeddingHistoryLength)
 
 	msgHistoryEmbedding, err := embeddingSvc.CreateEmbedding(ctx, msgHistoryText)
 	if err != nil {
