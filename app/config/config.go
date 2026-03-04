@@ -17,11 +17,10 @@ type Config struct {
 	Conversation Conversation `yaml:"conversation"`
 }
 
-// Conversation holds optional tuning for the chatbot (defaults used when zero).
 type Conversation struct {
-	MinReplyIntervalSec    int `yaml:"min_reply_interval_sec"`    // min seconds between sends (e.g. 45-60)
-	MaxSilenceSec          int `yaml:"max_silence_sec"`           // force reply if no reply for this long (e.g. 180-300)
-	RecentMemoryMaxEntries int `yaml:"recent_memory_max_entries"` // max session recent-memory entries (default 30)
+	MinReplyIntervalSec    int `yaml:"min_reply_interval_sec"`
+	MaxSilenceSec          int `yaml:"max_silence_sec"`
+	RecentMemoryMaxEntries int `yaml:"recent_memory_max_entries"`
 }
 
 type OpenAI struct {
@@ -100,7 +99,7 @@ func Load() (*Config, error) {
 		result.Conversation.MinReplyIntervalSec = 45
 	}
 	if result.Conversation.MaxSilenceSec == 0 {
-		result.Conversation.MaxSilenceSec = 240
+		result.Conversation.MaxSilenceSec = 90
 	}
 	if result.Conversation.RecentMemoryMaxEntries == 0 {
 		result.Conversation.RecentMemoryMaxEntries = 30
