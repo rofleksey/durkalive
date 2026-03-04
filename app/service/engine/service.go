@@ -81,7 +81,7 @@ func (s *Service) runIteration(ctx context.Context) error {
 				slog.Warn("ProcessMessage error", "error", err)
 			}
 
-			slog.Info("Processed message",
+			slog.Debug("Processed message",
 				"username", msg.Username,
 				"text", msg.Text,
 				"duration", time.Since(start))

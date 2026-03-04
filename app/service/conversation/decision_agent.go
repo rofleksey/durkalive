@@ -8,7 +8,6 @@ import (
 	"durkalive/app/service/memory"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"strings"
 	"time"
 
@@ -61,13 +60,6 @@ func (a *DecisionAgent) Call(ctx context.Context, username, text string, tags, u
 	}
 	historyStr := a.state.chatHistory.format()
 	a.state.mu.RUnlock()
-
-	slog.Debug("Facts debug",
-		"tags", tags,
-		"usernames", usernames,
-		"random_facts", randomFactsStr,
-		"similar_facts", similarFactsStr,
-	)
 
 	now := time.Now()
 
