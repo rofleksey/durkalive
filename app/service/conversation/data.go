@@ -5,6 +5,19 @@ import (
 	"time"
 )
 
+type AnswerContext struct {
+	At              time.Time
+	TriggerUsername string
+	TriggerMessage  string
+	Tags            []string
+	Usernames       []string
+	ChatHistory     string
+	RecentMemory    string
+	SimilarFacts    string
+	Prompt          string
+	Reply           string
+}
+
 type DecisionResponse struct {
 	AddFacts     []AddFactRequest `json:"add_facts"`
 	AddRecent    []string         `json:"add_recent"`

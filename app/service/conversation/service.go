@@ -1,10 +1,12 @@
-// app/service/conversation/service.go
 package conversation
 
 import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"durkalive/app/client/twitch"
@@ -16,6 +18,8 @@ import (
 
 	"github.com/samber/do"
 )
+
+const answersDir = "data/answers"
 
 const (
 	maxReasonDuration = 30 * time.Second
@@ -65,6 +69,12 @@ func New(di *do.Injector) (*Service, error) {
 }
 
 func (s *Service) ProcessMessage(ctx context.Context, username, text string) error {
+	log := slog.With(
+		"username", username,
+		"trigger_message", text,
+	)
+	ctx = WithLogger(ctx, log)
+
 	defer func() {
 		s.state.mu.Lock()
 		s.state.chatHistory.add(username, text)
@@ -94,7 +104,7 @@ func (s *Service) ProcessMessage(ctx context.Context, username, text string) err
 		return fmt.Errorf("decisionAgent.Call: %w", err)
 	}
 
-	go s.applyMemoryChanges(result)
+	s.applyMemoryChanges(result)
 
 	needReply := result.NeedResponse
 	if !needReply {
@@ -118,15 +128,10 @@ func (s *Service) ProcessMessage(ctx context.Context, username, text string) err
 		return nil
 	}
 
-	go func() {
-		if err := s.generateReply(ctx, username, text, tags, usernames); err != nil {
-			slog.Error("Failed to generate reply",
-				"username", username,
-				"text", text,
-				"error", err,
-			)
-		}
-	}()
+	if err := s.generateReply(ctx, username, text, tags, usernames); err != nil {
+		LoggerFromContext(ctx).Error("Failed to generate reply", "error", err)
+		return err
+	}
 
 	return nil
 }
@@ -146,7 +151,7 @@ func (s *Service) applyMemoryChanges(result *DecisionResponse) {
 }
 
 func (s *Service) generateReply(ctx context.Context, username, text string, tags, usernames []string) error {
-	replyText, err := s.replyAgent.Call(ctx, username, text, tags, usernames)
+	replyText, answerCtx, err := s.replyAgent.Call(ctx, username, text, tags, usernames)
 	if err != nil {
 		return fmt.Errorf("replyAgent.Call: %w", err)
 	}
@@ -167,7 +172,7 @@ func (s *Service) generateReply(ctx context.Context, username, text string, tags
 		return nil
 	}
 
-	if err = s.sendMessage(replyText); err != nil {
+	if err = s.sendMessage(ctx, replyText); err != nil {
 		return fmt.Errorf("failed to send message: %w", err)
 	}
 
@@ -176,14 +181,41 @@ func (s *Service) generateReply(ctx context.Context, username, text string, tags
 	s.state.lastReplyTime = time.Now()
 	s.state.mu.Unlock()
 
+	if answerCtx != nil {
+		if writeErr := s.writeAnswerDebug(answerCtx); writeErr != nil {
+			LoggerFromContext(ctx).Warn("Failed to write answer debug file", "error", writeErr)
+		}
+	}
+
 	return nil
 }
 
-func (s *Service) sendMessage(text string) error {
+func (s *Service) writeAnswerDebug(ctx *AnswerContext) error {
+	if err := os.MkdirAll(answersDir, 0755); err != nil {
+		return fmt.Errorf("mkdir answers: %w", err)
+	}
+	name := ctx.At.Format("2006-01-02_15-04-05") + ".txt"
+	path := filepath.Join(answersDir, name)
+	body := formatAnswerContext(ctx)
+	return os.WriteFile(path, []byte(body), 0644)
+}
+
+func formatAnswerContext(ctx *AnswerContext) string {
+	const sep = "==========\n"
+	return sep + "At: " + ctx.At.Format(time.RFC3339) + "\n" +
+		sep + "TRIGGER\nusername: " + ctx.TriggerUsername + "\nmessage: " + ctx.TriggerMessage + "\n" +
+		"tags: " + strings.Join(ctx.Tags, ", ") + "\nusernames: " + strings.Join(ctx.Usernames, ", ") + "\n" +
+		sep + "CHAT HISTORY\n" + ctx.ChatHistory + "\n" +
+		sep + "RECENT MEMORY\n" + ctx.RecentMemory + "\n" +
+		sep + "SIMILAR FACTS\n" + ctx.SimilarFacts + "\n" +
+		sep + "PROMPT (SENT TO MODEL)\n" + ctx.Prompt + "\n" +
+		sep + "REPLY\n" + ctx.Reply + "\n"
+}
+
+func (s *Service) sendMessage(ctx context.Context, text string) error {
+	log := LoggerFromContext(ctx)
 	if s.cfg.Twitch.DisableNotifications {
-		slog.Info("Replied to message (notifications disabled)",
-			"text", text,
-			"telegram", true)
+		log.Info("Replied to message (notifications disabled)", "text", text, "telegram", true)
 		return nil
 	}
 
@@ -191,10 +223,7 @@ func (s *Service) sendMessage(text string) error {
 		return fmt.Errorf("failed to send message to twitch: %w", err)
 	}
 
-	slog.Info("Replied to message",
-		"text", text,
-		"telegram", true)
-
+	log.Info("Replied to message", "text", text, "telegram", true)
 	return nil
 }
 

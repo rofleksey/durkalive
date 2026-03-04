@@ -49,12 +49,12 @@ func NewReplyAgent(
 	}
 }
 
-func (a *ReplyAgent) Call(ctx context.Context, username, text string, tags, usernames []string) (string, error) {
+func (a *ReplyAgent) Call(ctx context.Context, username, text string, tags, usernames []string) (string, *AnswerContext, error) {
 	a.state.mu.RLock()
 	similarFactsStr, err := formatFactsByChatHistory(ctx, a.db, a.embeddingSvc, a.state, usernames)
 	if err != nil {
 		a.state.mu.RUnlock()
-		return "", fmt.Errorf("failed to format similar facts: %w", err)
+		return "", nil, fmt.Errorf("failed to format similar facts: %w", err)
 	}
 	historyStr := a.state.chatHistory.format()
 	a.state.mu.RUnlock()
@@ -96,13 +96,27 @@ func (a *ReplyAgent) Call(ctx context.Context, username, text string, tags, user
 		},
 	)
 	if err != nil {
-		return "", fmt.Errorf("failed to create chat completion: %w", err)
+		return "", nil, fmt.Errorf("failed to create chat completion: %w", err)
 	}
 
 	if len(aiResponse.Choices) == 0 {
-		return "", fmt.Errorf("no chat completion found")
+		return "", nil, fmt.Errorf("no chat completion found")
 	}
 
 	result := aiResponse.Choices[0].Message.Content
-	return strings.TrimSpace(result), nil
+	reply := strings.TrimSpace(result)
+
+	ctxCopy := &AnswerContext{
+		At:              now,
+		TriggerUsername: username,
+		TriggerMessage:  text,
+		Tags:            append([]string(nil), tags...),
+		Usernames:       append([]string(nil), usernames...),
+		ChatHistory:     historyStr,
+		RecentMemory:    recentMemoryStr,
+		SimilarFacts:    similarFactsStr,
+		Prompt:          prompt,
+		Reply:           reply,
+	}
+	return reply, ctxCopy, nil
 }
