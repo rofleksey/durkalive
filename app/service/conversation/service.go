@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"durkalive/app/client/twitch"
@@ -22,7 +21,7 @@ import (
 const answersDir = "data/answers"
 
 const (
-	maxReasonDuration = 30 * time.Second
+	maxReasonDuration = 10 * time.Second
 	maxMessageLength  = 500
 )
 
@@ -33,7 +32,6 @@ type Service struct {
 	memorySvc       *memory.Service
 	recentMemorySvc *recentmemory.Service
 
-	taggerAgent   *TaggerAgent
 	decisionAgent *DecisionAgent
 	replyAgent    *ReplyAgent
 	reviewAgent   *ReviewAgent
@@ -46,8 +44,6 @@ func New(di *do.Injector) (*Service, error) {
 	var state State
 
 	recentMemorySvc := do.MustInvoke[*recentmemory.Service](di)
-	taggerAgent := NewTaggerAgent(di, createClient(cfg.OpenAI.Tagger), cfg.OpenAI.Tagger.Model,
-		&state)
 	decisionAgent := NewDecisionAgent(di, createClient(cfg.OpenAI.Decision), cfg.OpenAI.Decision.Model, &state)
 	replyAgent := NewReplyAgent(di, createClient(cfg.OpenAI.Reply), cfg.OpenAI.Reply.Model, &state, recentMemorySvc)
 	reviewAgent := NewReviewAgent(di, createClient(cfg.OpenAI.Review), cfg.OpenAI.Review.Model)
@@ -58,7 +54,6 @@ func New(di *do.Injector) (*Service, error) {
 		twitchClient:    do.MustInvoke[*twitch.Client](di),
 		memorySvc:       do.MustInvoke[*memory.Service](di),
 		recentMemorySvc: recentMemorySvc,
-		taggerAgent:     taggerAgent,
 		decisionAgent:   decisionAgent,
 		replyAgent:      replyAgent,
 		reviewAgent:     reviewAgent,
@@ -71,9 +66,9 @@ func New(di *do.Injector) (*Service, error) {
 func (s *Service) ProcessMessage(ctx context.Context, username, text string) error {
 	log := slog.With(
 		"username", username,
-		"trigger_message", text,
 	)
 	ctx = WithLogger(ctx, log)
+	totalStart := time.Now()
 
 	defer func() {
 		s.state.mu.Lock()
@@ -81,10 +76,7 @@ func (s *Service) ProcessMessage(ctx context.Context, username, text string) err
 		s.state.mu.Unlock()
 	}()
 
-	tags, err := s.taggerAgent.Call(ctx, username, text)
-	if err != nil {
-		return fmt.Errorf("taggerAgent.Call: %w", err)
-	}
+	stageStart := time.Now()
 
 	s.state.mu.RLock()
 	usernameMap := make(map[string]struct{})
@@ -99,12 +91,16 @@ func (s *Service) ProcessMessage(ctx context.Context, username, text string) err
 		usernames = append(usernames, curUsername)
 	}
 
-	result, err := s.decisionAgent.Call(ctx, username, text, tags, usernames)
+	stageStart = time.Now()
+	result, err := s.decisionAgent.Call(ctx, username, text, usernames)
 	if err != nil {
 		return fmt.Errorf("decisionAgent.Call: %w", err)
 	}
+	log.Debug("message processing stage", "stage", "decision", "duration", time.Since(stageStart), "duration_ms", time.Since(stageStart).Milliseconds())
 
+	stageStart = time.Now()
 	s.applyMemoryChanges(result)
+	log.Debug("message processing stage", "stage", "apply_memory", "duration", time.Since(stageStart), "duration_ms", time.Since(stageStart).Milliseconds())
 
 	needReply := result.NeedResponse
 	if !needReply {
@@ -117,6 +113,7 @@ func (s *Service) ProcessMessage(ctx context.Context, username, text string) err
 		}
 	}
 	if !needReply {
+		log.Debug("message processing complete", "total_duration", time.Since(totalStart), "total_duration_ms", time.Since(totalStart).Milliseconds(), "skipped", "no_reply_needed")
 		return nil
 	}
 
@@ -125,14 +122,15 @@ func (s *Service) ProcessMessage(ctx context.Context, username, text string) err
 	lastReply := s.state.lastReplyTime
 	s.state.mu.RUnlock()
 	if !lastReply.IsZero() && time.Since(lastReply) < minGap {
+		log.Debug("message processing complete", "total_duration", time.Since(totalStart), "total_duration_ms", time.Since(totalStart).Milliseconds(), "skipped", "min_gap")
 		return nil
 	}
 
-	if err := s.generateReply(ctx, username, text, tags, usernames); err != nil {
+	stageStart = time.Now()
+	if err := s.generateReply(ctx, username, text, usernames); err != nil {
 		LoggerFromContext(ctx).Error("Failed to generate reply", "error", err)
 		return err
 	}
-
 	return nil
 }
 
@@ -150,11 +148,15 @@ func (s *Service) applyMemoryChanges(result *DecisionResponse) {
 	}
 }
 
-func (s *Service) generateReply(ctx context.Context, username, text string, tags, usernames []string) error {
-	replyText, answerCtx, err := s.replyAgent.Call(ctx, username, text, tags, usernames)
+func (s *Service) generateReply(ctx context.Context, username, text string, usernames []string) error {
+	log := LoggerFromContext(ctx)
+
+	stageStart := time.Now()
+	replyText, answerCtx, err := s.replyAgent.Call(ctx, username, text, usernames)
 	if err != nil {
 		return fmt.Errorf("replyAgent.Call: %w", err)
 	}
+	log.Debug("message processing stage", "stage", "reply_agent", "duration", time.Since(stageStart), "duration_ms", time.Since(stageStart).Milliseconds())
 
 	if len(replyText) > maxMessageLength {
 		return fmt.Errorf("response is too long (%d > %d)", len(replyText), maxMessageLength)
@@ -164,17 +166,22 @@ func (s *Service) generateReply(ctx context.Context, username, text string, tags
 	contextStr := s.state.chatHistory.format()
 	s.state.mu.RUnlock()
 	lastMsg := fmt.Sprintf("%s: %s", username, text)
+
+	stageStart = time.Now()
 	ok, reviewErr := s.reviewAgent.Approve(ctx, lastMsg, replyText, contextStr)
 	if reviewErr != nil {
 		return fmt.Errorf("reviewAgent.Approve: %w", reviewErr)
 	}
+	log.Debug("message processing stage", "stage", "review_agent", "duration", time.Since(stageStart), "duration_ms", time.Since(stageStart).Milliseconds())
 	if !ok {
 		return nil
 	}
 
+	stageStart = time.Now()
 	if err = s.sendMessage(ctx, replyText); err != nil {
 		return fmt.Errorf("failed to send message: %w", err)
 	}
+	log.Debug("message processing stage", "stage", "send_message", "duration", time.Since(stageStart), "duration_ms", time.Since(stageStart).Milliseconds())
 
 	s.state.mu.Lock()
 	s.state.chatHistory.add(s.cfg.Twitch.Username, replyText)
@@ -204,10 +211,6 @@ func formatAnswerContext(ctx *AnswerContext) string {
 	const sep = "==========\n"
 	return sep + "At: " + ctx.At.Format(time.RFC3339) + "\n" +
 		sep + "TRIGGER\nusername: " + ctx.TriggerUsername + "\nmessage: " + ctx.TriggerMessage + "\n" +
-		"tags: " + strings.Join(ctx.Tags, ", ") + "\nusernames: " + strings.Join(ctx.Usernames, ", ") + "\n" +
-		sep + "CHAT HISTORY\n" + ctx.ChatHistory + "\n" +
-		sep + "RECENT MEMORY\n" + ctx.RecentMemory + "\n" +
-		sep + "SIMILAR FACTS\n" + ctx.SimilarFacts + "\n" +
 		sep + "PROMPT (SENT TO MODEL)\n" + ctx.Prompt + "\n" +
 		sep + "REPLY\n" + ctx.Reply + "\n"
 }

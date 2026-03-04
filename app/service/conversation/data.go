@@ -9,11 +9,6 @@ type AnswerContext struct {
 	At              time.Time
 	TriggerUsername string
 	TriggerMessage  string
-	Tags            []string
-	Usernames       []string
-	ChatHistory     string
-	RecentMemory    string
-	SimilarFacts    string
 	Prompt          string
 	Reply           string
 }

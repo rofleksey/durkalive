@@ -49,7 +49,7 @@ func NewReplyAgent(
 	}
 }
 
-func (a *ReplyAgent) Call(ctx context.Context, username, text string, tags, usernames []string) (string, *AnswerContext, error) {
+func (a *ReplyAgent) Call(ctx context.Context, username, text string, usernames []string) (string, *AnswerContext, error) {
 	a.state.mu.RLock()
 	similarFactsStr, err := formatFactsByChatHistory(ctx, a.db, a.embeddingSvc, a.state, usernames)
 	if err != nil {
@@ -110,11 +110,6 @@ func (a *ReplyAgent) Call(ctx context.Context, username, text string, tags, user
 		At:              now,
 		TriggerUsername: username,
 		TriggerMessage:  text,
-		Tags:            append([]string(nil), tags...),
-		Usernames:       append([]string(nil), usernames...),
-		ChatHistory:     historyStr,
-		RecentMemory:    recentMemoryStr,
-		SimilarFacts:    similarFactsStr,
 		Prompt:          prompt,
 		Reply:           reply,
 	}
