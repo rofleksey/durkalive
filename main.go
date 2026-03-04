@@ -13,6 +13,7 @@ import (
 	"durkalive/app/service/engine"
 	"durkalive/app/service/memory"
 	"durkalive/app/service/queue"
+	"durkalive/app/service/recentmemory"
 	"durkalive/app/service/transcribe"
 	"durkalive/app/util/mylog"
 	"log/slog"
@@ -51,6 +52,7 @@ func main() {
 	do.Provide(di, transcribe.New)
 	do.Provide(di, database.New)
 	do.Provide(di, memory.New)
+	do.Provide(di, recentmemory.New)
 	do.Provide(di, embedding.New)
 	do.Provide(di, conversation.New)
 	do.Provide(di, queue.New)

@@ -9,17 +9,26 @@ import (
 )
 
 type Config struct {
-	Log    Log    `yaml:"log"`
-	DB     DB     `yaml:"db"`
-	Yandex Yandex `yaml:"yandex"`
-	Twitch Twitch `yaml:"twitch"`
-	OpenAI OpenAI `yaml:"openai"`
+	Log          Log          `yaml:"log"`
+	DB           DB           `yaml:"db"`
+	Yandex       Yandex       `yaml:"yandex"`
+	Twitch       Twitch       `yaml:"twitch"`
+	OpenAI       OpenAI       `yaml:"openai"`
+	Conversation Conversation `yaml:"conversation"`
+}
+
+// Conversation holds optional tuning for the chatbot (defaults used when zero).
+type Conversation struct {
+	MinReplyIntervalSec    int `yaml:"min_reply_interval_sec"`    // min seconds between sends (e.g. 45-60)
+	MaxSilenceSec          int `yaml:"max_silence_sec"`           // force reply if no reply for this long (e.g. 180-300)
+	RecentMemoryMaxEntries int `yaml:"recent_memory_max_entries"` // max session recent-memory entries (default 30)
 }
 
 type OpenAI struct {
 	Tagger    ModelConfig `yaml:"tagger" validate:"required"`
 	Decision  ModelConfig `yaml:"decision" validate:"required"`
 	Reply     ModelConfig `yaml:"reply" validate:"required"`
+	Review    ModelConfig `yaml:"review" validate:"required"`
 	Embedding ModelConfig `yaml:"embedding" validate:"required"`
 }
 
@@ -85,6 +94,16 @@ func Load() (*Config, error) {
 	}
 	if result.DB.Database == "" {
 		result.DB.Database = "durkalive"
+	}
+
+	if result.Conversation.MinReplyIntervalSec == 0 {
+		result.Conversation.MinReplyIntervalSec = 45
+	}
+	if result.Conversation.MaxSilenceSec == 0 {
+		result.Conversation.MaxSilenceSec = 240
+	}
+	if result.Conversation.RecentMemoryMaxEntries == 0 {
+		result.Conversation.RecentMemoryMaxEntries = 30
 	}
 
 	validate := validator.New(validator.WithRequiredStructEnabled())

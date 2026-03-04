@@ -5,7 +5,7 @@ import (
 	"durkalive/app/config"
 	"durkalive/app/database"
 	"durkalive/app/service/embedding"
-	"durkalive/app/service/memory"
+	"durkalive/app/service/recentmemory"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -21,10 +21,10 @@ import (
 var decisionPromptTemplate string
 
 type DecisionAgent struct {
-	cfg          *config.Config
-	db           *database.Service
-	memorySvc    *memory.Service
-	embeddingSvc *embedding.Service
+	cfg             *config.Config
+	db              *database.Service
+	embeddingSvc    *embedding.Service
+	recentMemorySvc *recentmemory.Service
 
 	client *openai.Client
 	model  string
@@ -39,20 +39,19 @@ func NewDecisionAgent(
 	state *State,
 ) *DecisionAgent {
 	return &DecisionAgent{
-		cfg:          do.MustInvoke[*config.Config](di),
-		db:           do.MustInvoke[*database.Service](di),
-		memorySvc:    do.MustInvoke[*memory.Service](di),
-		embeddingSvc: do.MustInvoke[*embedding.Service](di),
-		client:       client,
-		model:        model,
-		state:        state,
+		cfg:             do.MustInvoke[*config.Config](di),
+		db:              do.MustInvoke[*database.Service](di),
+		embeddingSvc:    do.MustInvoke[*embedding.Service](di),
+		recentMemorySvc: do.MustInvoke[*recentmemory.Service](di),
+		client:          client,
+		model:           model,
+		state:           state,
 	}
 }
 
 func (a *DecisionAgent) Call(ctx context.Context, username, text string, tags, usernames []string) (*DecisionResponse, error) {
 	a.state.mu.RLock()
 	lastReplyTime := a.state.lastReplyTime
-	randomFactsStr := formatRandomFactsByTags(ctx, a.memorySvc, tags, usernames)
 	similarFactsStr, err := formatFactsByChatHistory(ctx, a.db, a.embeddingSvc, a.state, usernames)
 	if err != nil {
 		a.state.mu.RUnlock()
@@ -70,6 +69,10 @@ func (a *DecisionAgent) Call(ctx context.Context, username, text string, tags, u
 		lastReply = fmt.Sprintf("Ты отвечал %d секунд назад", int(now.Sub(lastReplyTime).Seconds()))
 	}
 
+	recentMemoryStr := "Нет записей"
+	if a.recentMemorySvc != nil {
+		recentMemoryStr = a.recentMemorySvc.Format()
+	}
 	templateValues := map[string]any{
 		"last_message":  fmt.Sprintf("%s - %s: %s", formatTime(now), username, text),
 		"last_reply":    lastReply,
@@ -77,7 +80,7 @@ func (a *DecisionAgent) Call(ctx context.Context, username, text string, tags, u
 		"channel":       a.cfg.Twitch.Channel,
 		"username":      a.cfg.Twitch.Username,
 		"chat_history":  historyStr,
-		"random_facts":  randomFactsStr,
+		"recent_memory": recentMemoryStr,
 		"similar_facts": similarFactsStr,
 	}
 

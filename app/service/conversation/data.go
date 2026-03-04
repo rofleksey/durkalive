@@ -7,6 +7,7 @@ import (
 
 type DecisionResponse struct {
 	AddFacts     []AddFactRequest `json:"add_facts"`
+	AddRecent    []string         `json:"add_recent"`
 	RemoveFacts  []int            `json:"remove_facts"`
 	NeedResponse bool             `json:"need_response"`
 }

@@ -5,7 +5,6 @@ import (
 	"durkalive/app/config"
 	"durkalive/app/database"
 	"durkalive/app/service/embedding"
-	"durkalive/app/service/memory"
 	"fmt"
 	"net/http"
 	"strings"
@@ -15,9 +14,9 @@ import (
 )
 
 const (
-	maxRandomFacts                     = 25
-	maxSimilarFacts                    = 25
+	maxSimilarFacts                    = 20
 	similarFactsEmbeddingHistoryLength = 5
+	similarFactsMinThreshold           = 0.3
 )
 
 func createClient(cfg config.ModelConfig) *openai.Client {
@@ -39,24 +38,6 @@ func formatTime(t time.Time) string {
 	return t.Format("15:04:05")
 }
 
-func formatRandomFactsByTags(ctx context.Context, memorySvc *memory.Service, tags, usernames []string) string {
-	facts := memorySvc.Search(ctx, []string{}, tags, usernames, maxRandomFacts)
-	if len(facts) == 0 {
-		return "Нет фактов"
-	}
-
-	var builder strings.Builder
-	for _, fact := range facts {
-		builder.WriteString("id=")
-		builder.WriteString(fmt.Sprint(fact.ID))
-		builder.WriteString(", content=")
-		builder.WriteString(fact.Content)
-		builder.WriteString("\n")
-	}
-
-	return builder.String()
-}
-
 func formatFactsByChatHistory(ctx context.Context, db *database.Service, embeddingSvc *embedding.Service,
 	state *State, usernames []string) (string, error) {
 
@@ -67,7 +48,7 @@ func formatFactsByChatHistory(ctx context.Context, db *database.Service, embeddi
 		return "", fmt.Errorf("failed to create embedding: %w", err)
 	}
 
-	facts, err := db.FindSimilarFacts(ctx, usernames, msgHistoryEmbedding, 0, maxSimilarFacts)
+	facts, err := db.FindSimilarFacts(ctx, usernames, msgHistoryEmbedding, float32(similarFactsMinThreshold), maxSimilarFacts)
 	if err != nil {
 		return "", fmt.Errorf("failed to find similar facts: %w", err)
 	}
