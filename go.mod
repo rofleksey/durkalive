@@ -3,13 +3,11 @@ module durkalive
 go 1.25.1
 
 require (
-	github.com/elliotchance/pie/v2 v2.9.1
-	github.com/gempir/go-twitch-irc/v4 v4.3.1
 	github.com/go-playground/validator/v10 v10.30.1
 	github.com/gofiber/fiber/v2 v2.52.11
+	github.com/gorilla/websocket v1.5.3
 	github.com/jackc/pgx/v5 v5.7.2
 	github.com/lib/pq v1.11.2
-	github.com/nicklaw5/helix/v2 v2.32.0
 	github.com/pgvector/pgvector-go v0.3.0
 	github.com/phsym/console-slog v0.3.1
 	github.com/samber/do v1.6.0
@@ -53,7 +51,6 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.40.0 // indirect
 	go.opentelemetry.io/otel/trace v1.40.0 // indirect
 	golang.org/x/crypto v0.47.0 // indirect
-	golang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546 // indirect
 	golang.org/x/net v0.49.0 // indirect
 	golang.org/x/sys v0.40.0 // indirect
 	golang.org/x/text v0.33.0 // indirect

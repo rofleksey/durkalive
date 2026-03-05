@@ -7,7 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"os/exec"
-	"strings"
+	"runtime"
 	"sync"
 )
 
@@ -18,24 +18,44 @@ type FFmpegStream struct {
 	mu     sync.Mutex
 }
 
-func NewFFmpegStream(ctx context.Context, m3u8URL string) (*FFmpegStream, error) {
-	args := []string{
-		"-loglevel", "warning",
-		"-i", m3u8URL,
-		"-reconnect", "0",
-		"-reconnect_at_eof", "0",
-		"-reconnect_streamed", "0",
-		"-reconnect_delay_max", "0",
-		"-vn",
-		"-acodec", "pcm_s16le",
-		"-ac", "1",
-		"-ar", "48000",
-		"-f", "wav",
-		"-",
+func NewMicStream(ctx context.Context, micDevice string) (*FFmpegStream, error) {
+	var args []string
+	switch runtime.GOOS {
+	case "windows":
+		device := micDevice
+		if device == "" {
+			device = "Microphone"
+		}
+		// Single argument so spaces in device name are preserved (no shell)
+		args = []string{
+			"-loglevel", "warning",
+			"-f", "dshow",
+			"-i", "audio=" + device,
+			"-acodec", "pcm_s16le",
+			"-ac", "1",
+			"-ar", "48000",
+			"-f", "wav",
+			"-",
+		}
+	default:
+		device := micDevice
+		if device == "" {
+			device = "default"
+		}
+		args = []string{
+			"-loglevel", "warning",
+			"-f", "pulse",
+			"-i", device,
+			"-acodec", "pcm_s16le",
+			"-ac", "1",
+			"-ar", "48000",
+			"-f", "wav",
+			"-",
+		}
 	}
 
 	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
-	slog.Info("Running ffmpeg", "cmd", "ffmpeg "+strings.Join(args, " "))
+	slog.Info("Running ffmpeg from microphone", "device", micDevice)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {

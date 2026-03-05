@@ -3,20 +3,21 @@ package main
 import (
 	"context"
 	"durkalive/app/client/speechkit"
-	"durkalive/app/client/twitch"
-	"durkalive/app/client/twitch_irc"
-	"durkalive/app/client/twitch_live"
+	"durkalive/app/client/tts"
 	"durkalive/app/config"
 	"durkalive/app/database"
 	"durkalive/app/service/conversation"
 	"durkalive/app/service/embedding"
 	"durkalive/app/service/engine"
 	"durkalive/app/service/memory"
+	"durkalive/app/service/playback"
 	"durkalive/app/service/queue"
 	"durkalive/app/service/recentmemory"
 	"durkalive/app/service/transcribe"
 	"durkalive/app/util/mylog"
+	"errors"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 
@@ -46,14 +47,13 @@ func main() {
 	}
 
 	do.Provide(di, speechkit.NewClient)
-	do.Provide(di, twitch.NewClient)
-	do.Provide(di, twitch_live.NewClient)
-	do.Provide(di, twitch_irc.NewClient)
+	do.Provide(di, tts.NewClient)
 	do.Provide(di, transcribe.New)
 	do.Provide(di, database.New)
 	do.Provide(di, memory.New)
 	do.Provide(di, recentmemory.New)
 	do.Provide(di, embedding.New)
+	do.Provide(di, playback.New)
 	do.Provide(di, conversation.New)
 	do.Provide(di, queue.New)
 	do.Provide(di, engine.New)
@@ -70,8 +70,12 @@ func main() {
 		cancel()
 	}()
 
-	go do.MustInvoke[*twitch.Client](di).RunRefreshLoop(appCtx)
-	go do.MustInvoke[*twitch_irc.Client](di).RunRefreshLoop(appCtx)
+	go func() {
+		playbackSvc := do.MustInvoke[*playback.Service](di)
+		if err := playbackSvc.Run(appCtx); err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, http.ErrServerClosed) {
+			slog.Error("Playback server error", "error", err)
+		}
+	}()
 
 	go do.MustInvoke[*engine.Service](di).Run(appCtx)
 

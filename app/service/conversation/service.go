@@ -8,9 +8,10 @@ import (
 	"path/filepath"
 	"time"
 
-	"durkalive/app/client/twitch"
+	"durkalive/app/client/tts"
 	"durkalive/app/config"
 	"durkalive/app/service/memory"
+	"durkalive/app/service/playback"
 	"durkalive/app/service/recentmemory"
 
 	_ "embed"
@@ -28,7 +29,8 @@ const (
 type Service struct {
 	appCtx          context.Context
 	cfg             *config.Config
-	twitchClient    *twitch.Client
+	ttsClient       *tts.Client
+	playbackSvc     *playback.Service
 	memorySvc       *memory.Service
 	recentMemorySvc *recentmemory.Service
 
@@ -51,7 +53,8 @@ func New(di *do.Injector) (*Service, error) {
 	s := &Service{
 		appCtx:          do.MustInvoke[context.Context](di),
 		cfg:             cfg,
-		twitchClient:    do.MustInvoke[*twitch.Client](di),
+		ttsClient:       do.MustInvoke[*tts.Client](di),
+		playbackSvc:     do.MustInvoke[*playback.Service](di),
 		memorySvc:       do.MustInvoke[*memory.Service](di),
 		recentMemorySvc: recentMemorySvc,
 		decisionAgent:   decisionAgent,
@@ -141,7 +144,7 @@ func (s *Service) applyMemoryChanges(result *DecisionResponse) {
 	}
 	for _, addReq := range result.AddFacts {
 		if len(addReq.Usernames) == 0 {
-			addReq.Usernames = []string{s.cfg.Twitch.Channel}
+			addReq.Usernames = []string{s.cfg.Bot.UserName}
 		}
 
 		s.memorySvc.AddFact(s.appCtx, addReq.Content, addReq.Tags, addReq.Usernames)
@@ -184,7 +187,7 @@ func (s *Service) generateReply(ctx context.Context, username, text string, user
 	log.Debug("message processing stage", "stage", "send_message", "duration", time.Since(stageStart), "duration_ms", time.Since(stageStart).Milliseconds())
 
 	s.state.mu.Lock()
-	s.state.chatHistory.add(s.cfg.Twitch.Username, replyText)
+	s.state.chatHistory.add(s.cfg.Bot.BotName, replyText)
 	s.state.lastReplyTime = time.Now()
 	s.state.mu.Unlock()
 
@@ -217,16 +220,14 @@ func formatAnswerContext(ctx *AnswerContext) string {
 
 func (s *Service) sendMessage(ctx context.Context, text string) error {
 	log := LoggerFromContext(ctx)
-	if s.cfg.Twitch.DisableNotifications {
-		log.Info("Replied to message (notifications disabled)", "text", text, "telegram", true)
-		return nil
+
+	wav, err := s.ttsClient.Synthesize(ctx, text)
+	if err != nil {
+		return fmt.Errorf("TTS synthesize: %w", err)
 	}
 
-	if err := s.twitchClient.SendMessage(s.cfg.Twitch.Channel, text); err != nil {
-		return fmt.Errorf("failed to send message to twitch: %w", err)
-	}
-
-	log.Info("Replied to message", "text", text, "telegram", true)
+	s.playbackSvc.BroadcastWAV(wav)
+	log.Info("Replied with TTS", "text", text)
 	return nil
 }
 

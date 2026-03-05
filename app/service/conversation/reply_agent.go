@@ -66,8 +66,8 @@ func (a *ReplyAgent) Call(ctx context.Context, username, text string, usernames 
 	now := time.Now()
 	templateValues := map[string]any{
 		"last_message":  fmt.Sprintf("%s - %s: %s", formatTime(now), username, text),
-		"channel":       a.cfg.Twitch.Channel,
-		"username":      a.cfg.Twitch.Username,
+		"channel":       a.cfg.Bot.UserName,
+		"username":      a.cfg.Bot.BotName,
 		"chat_history":  historyStr,
 		"recent_memory": recentMemoryStr,
 		"similar_facts": similarFactsStr,

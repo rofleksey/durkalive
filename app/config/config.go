@@ -12,9 +12,32 @@ type Config struct {
 	Log          Log          `yaml:"log"`
 	DB           DB           `yaml:"db"`
 	Yandex       Yandex       `yaml:"yandex"`
-	Twitch       Twitch       `yaml:"twitch"`
+	Audio        Audio        `yaml:"audio"`
+	TTS          TTS          `yaml:"tts"`
+	Bot          Bot          `yaml:"bot"`
+	Webserver    Webserver    `yaml:"webserver"`
 	OpenAI       OpenAI       `yaml:"openai"`
 	Conversation Conversation `yaml:"conversation"`
+}
+
+// Audio holds capture device settings. MicDevice can contain spaces (e.g. "Microphone (USB Condenser Microphone)").
+type Audio struct {
+	MicDevice string `yaml:"mic_device"`
+}
+
+type TTS struct {
+	APIKey  string `yaml:"api_key" validate:"required"`
+	Speaker string `yaml:"speaker" validate:"required"`
+	BaseURL string `yaml:"base_url"`
+}
+
+type Bot struct {
+	BotName  string `yaml:"bot_name"`
+	UserName string `yaml:"user_name"`
+}
+
+type Webserver struct {
+	Listen string `yaml:"listen"`
 }
 
 type Conversation struct {
@@ -42,16 +65,6 @@ type Yandex struct {
 }
 
 type SpeechKit struct {
-}
-
-type Twitch struct {
-	ClientID             string `yaml:"client_id" example:"a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p" validate:"required"`
-	ClientSecret         string `yaml:"client_secret" example:"abc123def456ghi789jkl012mno345pqr678stu901" validate:"required"`
-	Username             string `yaml:"username" example:"PogChamp123" validate:"required"`
-	Channel              string `yaml:"channel" example:"PogChamp123" validate:"required"`
-	RefreshToken         string `yaml:"refresh_token" example:"v1.abc123def456ghi789jkl012mno345pqr678stu901vwx234yz567" validate:"required"`
-	DisableNotifications bool   `yaml:"disable_notifications" example:"false"`
-	IgnoreChat           bool   `yaml:"ignore_chat" example:"false"`
 }
 
 type Log struct {
@@ -103,6 +116,18 @@ func Load() (*Config, error) {
 	}
 	if result.Conversation.RecentMemoryMaxEntries == 0 {
 		result.Conversation.RecentMemoryMaxEntries = 30
+	}
+	if result.TTS.BaseURL == "" {
+		result.TTS.BaseURL = "https://ntts.fdev.team/api/v1/tts"
+	}
+	if result.Bot.BotName == "" {
+		result.Bot.BotName = "assistant"
+	}
+	if result.Bot.UserName == "" {
+		result.Bot.UserName = "user"
+	}
+	if result.Webserver.Listen == "" {
+		result.Webserver.Listen = ":8080"
 	}
 
 	validate := validator.New(validator.WithRequiredStructEnabled())

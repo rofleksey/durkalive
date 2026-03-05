@@ -3,7 +3,6 @@ package transcribe
 import (
 	"context"
 	"durkalive/app/client/speechkit"
-	"durkalive/app/client/twitch_irc"
 	"durkalive/app/config"
 	"durkalive/app/service/queue"
 	"errors"
@@ -22,7 +21,6 @@ const (
 type Service struct {
 	cfg          *config.Config
 	speechClient *speechkit.YandexSpeechKit
-	ircClient    *twitch_irc.Client
 	queue        *queue.Service
 }
 
@@ -30,25 +28,24 @@ func New(di *do.Injector) (*Service, error) {
 	return &Service{
 		cfg:          do.MustInvoke[*config.Config](di),
 		speechClient: do.MustInvoke[*speechkit.YandexSpeechKit](di),
-		ircClient:    do.MustInvoke[*twitch_irc.Client](di),
 		queue:        do.MustInvoke[*queue.Service](di),
 	}, nil
 }
 
-func (s *Service) Start(ctx context.Context, m3u8URL string) (context.Context, context.CancelCauseFunc) {
+func (s *Service) Start(ctx context.Context) (context.Context, context.CancelCauseFunc) {
 	ctx, cancel := context.WithCancelCause(ctx)
 
-	go s.runTranscription(ctx, cancel, m3u8URL)
+	go s.runTranscription(ctx, cancel)
 
 	return ctx, cancel
 }
 
-func (s *Service) runTranscription(ctx context.Context, cancel context.CancelCauseFunc, m3u8URL string) {
+func (s *Service) runTranscription(ctx context.Context, cancel context.CancelCauseFunc) {
 	defer cancel(nil)
 
-	ffmpeg, err := NewFFmpegStream(ctx, m3u8URL)
+	ffmpeg, err := NewMicStream(ctx, s.cfg.Audio.MicDevice)
 	if err != nil {
-		cancel(fmt.Errorf("failed to create ffmpeg stream: %w", err))
+		cancel(fmt.Errorf("failed to create mic stream: %w", err))
 		return
 	}
 
@@ -63,20 +60,6 @@ func (s *Service) runTranscription(ctx context.Context, cancel context.CancelCau
 	go func() {
 		cancel(s.runTranscriptionWithRetry(ctx, audioStream))
 	}()
-
-	go func() {
-		s.ircClient.JoinChannel(s.cfg.Twitch.Channel)
-		s.ircClient.SetListener(func(channel, username, messageID, text string, tags map[string]string) {
-			if s.cfg.Twitch.IgnoreChat {
-				return
-			}
-
-			s.queue.Add(username, text)
-		})
-
-		cancel(s.ircClient.Run())
-	}()
-	defer s.ircClient.Disconnect()
 
 	go func() {
 		err := ffmpeg.Wait()
@@ -163,6 +146,7 @@ func (s *Service) streamAudio(ctx context.Context, audioSrc io.Reader, handle *s
 }
 
 func (s *Service) receivePhrases(ctx context.Context, handle *speechkit.Handle) error {
+	userName := s.cfg.Bot.UserName
 	for {
 		select {
 		case <-ctx.Done():
@@ -176,7 +160,7 @@ func (s *Service) receivePhrases(ctx context.Context, handle *speechkit.Handle) 
 		}
 
 		for _, text := range sentences {
-			s.queue.Add(s.cfg.Twitch.Channel, text)
+			s.queue.Add(userName, text)
 		}
 	}
 }

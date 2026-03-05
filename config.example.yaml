@@ -1,27 +1,59 @@
 # Generated YAML configuration example
 log:
-  # Telegram logging config
   telegram:
-    # Chat bot token, obtain it via BotFather
     token: "1234567890:ABCdefGHIjklMNopQRstUVwxyZ-123456789"
-
-    # Chat ID to send messages to
     chat_id: 1001234567890
 
 db:
-  # Postgres username
   user: postgres
-
-  # Postgres password
   pass: example_pass
-
-  # Postgres host
   host: "localhost:5432"
-
-  # Postgres database name
   database: durkalive
 
 yandex:
-  speech_kit:
-    api_key: rgrwegrewgrewgregw
-    folder_id: rgrwegrewgrewgregw
+  speech_kit: {}
+
+# Microphone device name for capture (can contain spaces). Leave empty for default.
+# Windows (dshow): e.g. "Microphone (USB Condenser Microphone)"
+# Linux (pulse): e.g. "default" or exact PulseAudio source name
+audio:
+  mic_device: "Microphone (USB Condenser Microphone)"
+
+tts:
+  api_key: "YOUR_TTS_API_KEY"
+  speaker: "father_grigori"
+  base_url: "https://ntts.fdev.team/api/v1/tts"
+
+bot:
+  bot_name: "assistant"
+  user_name: "user"
+
+webserver:
+  listen: ":8080"
+
+openai:
+  tagger:
+    base_url: "https://openrouter.ai/api/v1"
+    token: "sk-..."
+    model: "deepseek/deepseek-chat-v3-0324:free"
+  decision:
+    base_url: "https://openrouter.ai/api/v1"
+    token: "sk-..."
+    model: "deepseek/deepseek-chat-v3-0324:free"
+  reply:
+    base_url: "https://openrouter.ai/api/v1"
+    token: "sk-..."
+    model: "deepseek/deepseek-chat-v3-0324:free"
+  review:
+    base_url: "https://openrouter.ai/api/v1"
+    token: "sk-..."
+    model: "deepseek/deepseek-chat-v3-0324:free"
+  embedding:
+    base_url: "https://openrouter.ai/api/v1"
+    token: "sk-..."
+    model: "deepseek/deepseek-chat-v3-0324:free"
+
+conversation:
+  min_reply_interval_sec: 45
+  max_silence_sec: 90
+  recent_memory_max_entries: 30
