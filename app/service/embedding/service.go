@@ -4,6 +4,7 @@ import (
 	"context"
 	"durkalive/app/config"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -32,6 +33,11 @@ func New(di *do.Injector) (*Service, error) {
 }
 
 func (s *Service) CreateEmbedding(ctx context.Context, text string) (pgvector.Vector, error) {
+	start := time.Now()
+	defer func() {
+		slog.Debug("CreateEmbedding took", "time", time.Since(start))
+	}()
+
 	resp, err := s.client.CreateEmbeddings(ctx, openai.EmbeddingRequest{
 		Input: []string{text},
 		Model: openai.EmbeddingModel(s.cfg.OpenAI.Embedding.Model),

@@ -36,15 +36,7 @@ openai:
     base_url: "https://openrouter.ai/api/v1"
     token: "sk-..."
     model: "deepseek/deepseek-chat-v3-0324:free"
-  decision:
-    base_url: "https://openrouter.ai/api/v1"
-    token: "sk-..."
-    model: "deepseek/deepseek-chat-v3-0324:free"
-  reply:
-    base_url: "https://openrouter.ai/api/v1"
-    token: "sk-..."
-    model: "deepseek/deepseek-chat-v3-0324:free"
-  review:
+  agent:
     base_url: "https://openrouter.ai/api/v1"
     token: "sk-..."
     model: "deepseek/deepseek-chat-v3-0324:free"

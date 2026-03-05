@@ -14,8 +14,6 @@ import (
 	"durkalive/app/service/playback"
 	"durkalive/app/service/recentmemory"
 
-	_ "embed"
-
 	"github.com/samber/do"
 )
 
@@ -34,32 +32,26 @@ type Service struct {
 	memorySvc       *memory.Service
 	recentMemorySvc *recentmemory.Service
 
-	decisionAgent *DecisionAgent
-	replyAgent    *ReplyAgent
-	reviewAgent   *ReviewAgent
-	state         *State
+	agent *Agent
+	state *State
 }
 
 func New(di *do.Injector) (*Service, error) {
 	cfg := do.MustInvoke[*config.Config](di)
 
 	var state State
-
 	recentMemorySvc := do.MustInvoke[*recentmemory.Service](di)
-	decisionAgent := NewDecisionAgent(di, createClient(cfg.OpenAI.Decision), cfg.OpenAI.Decision.Model, &state)
-	replyAgent := NewReplyAgent(di, createClient(cfg.OpenAI.Reply), cfg.OpenAI.Reply.Model, &state, recentMemorySvc)
-	reviewAgent := NewReviewAgent(di, createClient(cfg.OpenAI.Review), cfg.OpenAI.Review.Model)
+	memorySvc := do.MustInvoke[*memory.Service](di)
+	agent := NewAgent(di, createClient(cfg.OpenAI.Agent), cfg.OpenAI.Agent.Model, &state, memorySvc, recentMemorySvc)
 
 	s := &Service{
 		appCtx:          do.MustInvoke[context.Context](di),
 		cfg:             cfg,
 		ttsClient:       do.MustInvoke[*tts.Client](di),
 		playbackSvc:     do.MustInvoke[*playback.Service](di),
-		memorySvc:       do.MustInvoke[*memory.Service](di),
+		memorySvc:       memorySvc,
 		recentMemorySvc: recentMemorySvc,
-		decisionAgent:   decisionAgent,
-		replyAgent:      replyAgent,
-		reviewAgent:     reviewAgent,
+		agent:           agent,
 		state:           &state,
 	}
 
@@ -67,9 +59,7 @@ func New(di *do.Injector) (*Service, error) {
 }
 
 func (s *Service) ProcessMessage(ctx context.Context, username, text string) error {
-	log := slog.With(
-		"username", username,
-	)
+	log := slog.With("username", username)
 	ctx = WithLogger(ctx, log)
 	totalStart := time.Now()
 
@@ -78,8 +68,6 @@ func (s *Service) ProcessMessage(ctx context.Context, username, text string) err
 		s.state.chatHistory.add(username, text)
 		s.state.mu.Unlock()
 	}()
-
-	stageStart := time.Now()
 
 	s.state.mu.RLock()
 	usernameMap := make(map[string]struct{})
@@ -90,114 +78,66 @@ func (s *Service) ProcessMessage(ctx context.Context, username, text string) err
 	s.state.mu.RUnlock()
 
 	usernames := make([]string, 0, len(usernameMap))
-	for curUsername := range usernameMap {
-		usernames = append(usernames, curUsername)
+	for u := range usernameMap {
+		usernames = append(usernames, u)
 	}
-
-	stageStart = time.Now()
-	result, err := s.decisionAgent.Call(ctx, username, text, usernames)
-	if err != nil {
-		return fmt.Errorf("decisionAgent.Call: %w", err)
-	}
-	log.Debug("message processing stage", "stage", "decision", "duration", time.Since(stageStart), "duration_ms", time.Since(stageStart).Milliseconds())
-
-	stageStart = time.Now()
-	s.applyMemoryChanges(result)
-	log.Debug("message processing stage", "stage", "apply_memory", "duration", time.Since(stageStart), "duration_ms", time.Since(stageStart).Milliseconds())
-
-	needReply := result.NeedResponse
-	if !needReply {
-		s.state.mu.RLock()
-		lastReply := s.state.lastReplyTime
-		s.state.mu.RUnlock()
-		maxSilence := time.Duration(s.cfg.Conversation.MaxSilenceSec) * time.Second
-		if !lastReply.IsZero() && time.Since(lastReply) > maxSilence {
-			needReply = true
-		}
-	}
-	if !needReply {
-		log.Debug("message processing complete", "total_duration", time.Since(totalStart), "total_duration_ms", time.Since(totalStart).Milliseconds(), "skipped", "no_reply_needed")
-		return nil
-	}
-
-	minGap := time.Duration(s.cfg.Conversation.MinReplyIntervalSec) * time.Second
-	s.state.mu.RLock()
-	lastReply := s.state.lastReplyTime
-	s.state.mu.RUnlock()
-	if !lastReply.IsZero() && time.Since(lastReply) < minGap {
-		log.Debug("message processing complete", "total_duration", time.Since(totalStart), "total_duration_ms", time.Since(totalStart).Milliseconds(), "skipped", "min_gap")
-		return nil
-	}
-
-	stageStart = time.Now()
-	if err := s.generateReply(ctx, username, text, usernames); err != nil {
-		LoggerFromContext(ctx).Error("Failed to generate reply", "error", err)
-		return err
-	}
-	return nil
-}
-
-func (s *Service) applyMemoryChanges(result *DecisionResponse) {
-	s.memorySvc.RemoveFacts(s.appCtx, result.RemoveFacts)
-	for _, entry := range result.AddRecent {
-		s.recentMemorySvc.Add(entry)
-	}
-	for _, addReq := range result.AddFacts {
-		if len(addReq.Usernames) == 0 {
-			addReq.Usernames = []string{s.cfg.Bot.UserName}
-		}
-
-		s.memorySvc.AddFact(s.appCtx, addReq.Content, addReq.Tags, addReq.Usernames)
-	}
-}
-
-func (s *Service) generateReply(ctx context.Context, username, text string, usernames []string) error {
-	log := LoggerFromContext(ctx)
 
 	stageStart := time.Now()
-	replyText, answerCtx, err := s.replyAgent.Call(ctx, username, text, usernames)
+	result, err := s.agent.Call(ctx, username, text, usernames, s.cfg.Conversation.MaxSilenceSec)
 	if err != nil {
-		return fmt.Errorf("replyAgent.Call: %w", err)
+		return fmt.Errorf("agent.Call: %w", err)
 	}
-	log.Debug("message processing stage", "stage", "reply_agent", "duration", time.Since(stageStart), "duration_ms", time.Since(stageStart).Milliseconds())
-
-	if len(replyText) > maxMessageLength {
-		return fmt.Errorf("response is too long (%d > %d)", len(replyText), maxMessageLength)
-	}
-
-	s.state.mu.RLock()
-	contextStr := s.state.chatHistory.format()
-	s.state.mu.RUnlock()
-	lastMsg := fmt.Sprintf("%s: %s", username, text)
+	log.Debug("message processing stage", "stage", "agent", "duration", time.Since(stageStart), "duration_ms", time.Since(stageStart).Milliseconds())
 
 	stageStart = time.Now()
-	ok, reviewErr := s.reviewAgent.Approve(ctx, lastMsg, replyText, contextStr)
-	if reviewErr != nil {
-		return fmt.Errorf("reviewAgent.Approve: %w", reviewErr)
+	s.applyAgentResult(result)
+	log.Debug("message processing stage", "stage", "apply_memory", "duration", time.Since(stageStart), "duration_ms", time.Since(stageStart).Milliseconds())
+
+	if result.replyText == "" {
+		log.Debug("message processing complete", "total_duration", time.Since(totalStart), "skipped", "no_reply")
+		return nil
 	}
-	log.Debug("message processing stage", "stage", "review_agent", "duration", time.Since(stageStart), "duration_ms", time.Since(stageStart).Milliseconds())
-	if !ok {
+
+	if len(result.replyText) > maxMessageLength {
+		log.Warn("response too long, dropping", "len", len(result.replyText), "max", maxMessageLength)
 		return nil
 	}
 
 	stageStart = time.Now()
-	if err = s.sendMessage(ctx, replyText); err != nil {
-		return fmt.Errorf("failed to send message: %w", err)
+	if err := s.sendMessage(ctx, result.replyText); err != nil {
+		return fmt.Errorf("send message: %w", err)
 	}
 	log.Debug("message processing stage", "stage", "send_message", "duration", time.Since(stageStart), "duration_ms", time.Since(stageStart).Milliseconds())
 
 	s.state.mu.Lock()
-	s.state.chatHistory.add(s.cfg.Bot.BotName, replyText)
+	s.state.chatHistory.add(s.cfg.Bot.BotName, result.replyText)
 	s.state.lastReplyTime = time.Now()
 	s.state.mu.Unlock()
 
-	if answerCtx != nil {
-		if writeErr := s.writeAnswerDebug(answerCtx); writeErr != nil {
+	if result.answerCtx != nil {
+		if writeErr := s.writeAnswerDebug(result.answerCtx); writeErr != nil {
 			LoggerFromContext(ctx).Warn("Failed to write answer debug file", "error", writeErr)
 		}
 	}
 
 	return nil
+}
+
+func (s *Service) applyAgentResult(result *agentResult) {
+	if result == nil {
+		return
+	}
+	s.memorySvc.RemoveFacts(s.appCtx, result.removeIDs)
+	for _, entry := range result.addRecent {
+		s.recentMemorySvc.Add(entry)
+	}
+	for _, add := range result.addFacts {
+		usernames := add.Usernames
+		if len(usernames) == 0 {
+			usernames = []string{s.cfg.Bot.UserName}
+		}
+		s.memorySvc.AddFact(s.appCtx, add.Content, add.Tags, usernames)
+	}
 }
 
 func (s *Service) writeAnswerDebug(ctx *AnswerContext) error {

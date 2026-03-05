@@ -47,10 +47,7 @@ type Conversation struct {
 }
 
 type OpenAI struct {
-	Tagger    ModelConfig `yaml:"tagger" validate:"required"`
-	Decision  ModelConfig `yaml:"decision" validate:"required"`
-	Reply     ModelConfig `yaml:"reply" validate:"required"`
-	Review    ModelConfig `yaml:"review" validate:"required"`
+	Agent     ModelConfig `yaml:"agent" validate:"required"`
 	Embedding ModelConfig `yaml:"embedding" validate:"required"`
 }
 

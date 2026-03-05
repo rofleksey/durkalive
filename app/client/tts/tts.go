@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
+	"time"
 
 	"durkalive/app/config"
 
@@ -26,6 +28,11 @@ func NewClient(di *do.Injector) (*Client, error) {
 }
 
 func (c *Client) Synthesize(ctx context.Context, text string) ([]byte, error) {
+	start := time.Now()
+	defer func() {
+		slog.Debug("Synthesize took", "time", time.Since(start))
+	}()
+
 	u, err := url.Parse(c.cfg.TTS.BaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid TTS base URL: %w", err)
